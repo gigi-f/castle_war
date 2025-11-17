@@ -7,27 +7,32 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
 - Maintain smooth UX: instant key responses, minimal allocations per frame, and obvious visual cues when switching layers or views.
 
 ### Key features & controls
-- **Views**
-  - `/` toggles between solo top-down mode and solo side view.
-  - `m` toggles split mode, showing top view on the upper half and side view on the lower half (both always live).
+- **Windows & layouts**
+  - Desktop launcher now opens **two independent OS windows**: the primary top-focused window plus a side-view companion. Drag, resize, or minimize each separately.
+  - The primary window boots with split view already enabled and the side camera fully zoomed out for maximum context—tap `m` if you want to collapse back to a single panel.
+  - `/` still swaps perspectives, but only in windows configured to allow it (default: the primary window). The detached side window is locked to the side view.
+  - `m` toggles the in-window split view (top on the left, side on the right, both full height). Detached windows ignore this key.
 - **Layer navigation**
-  - `,` steps downward through Z layers (includes mirrored underground levels equal in depth to the sky height).
-  - `.` steps upward until the top of the constructed world (currently 32 blocks above ground).
-- **Side view extras** (active in solo or split mode):
+  - `,` / `.` adjust the top-down layer independently.
+  - `[` / `]` adjust the side-view slice independently, even while the top view stays on a different layer.
+- **Side view extras** (active in solo, split, or detached mode):
   - Arrow keys pan the orthographic camera.
   - `-` / `=` zoom out / in (clamped to [0.5×, 3×]).
-  - Side rendering shows the first non-air block along the camera slice and fades distant layers for depth.
+  - Side rendering shows the first non-air block along the camera slice, fades distant layers for depth, and overlays a thin blue horizontal guide matching the currently selected top-down layer.
+- **Top view cues**
+  - The top-down renderer now includes a matching horizontal blue line that marks the Y-slice currently displayed in the side view, keeping both panels synchronized visually.
 - **Moving cube** travels between the two castle gates to demonstrate synchronization between views.
 
 ### Architecture overview
 - Modules:
   - `core`: all gameplay logic, rendering, and input (`com.castlewar.*`).
-  - `desktop`: LWJGL3 launcher only—keep it free of game logic for future targets.
+  - `desktop`: LWJGL3 launcher + multi-window bootstrap; backend specifics live here.
 - Important packages/classes:
-  - `com.castlewar.CasteWarGame` – configures the world (currently 80×48×32) and boots `DualViewScreen`.
+  - `com.castlewar.CasteWarGame` – wires a `DualViewScreen` instance to a `WorldContext` with a chosen `Options` profile (primary vs detached windows).
   - `com.castlewar.world.GridWorld` – simple `(x,y,z)` block array with mirrored subterranean layers.
   - `com.castlewar.renderer.GridRenderer` – wraps a shared `ShapeRenderer` and color palette.
-  - `com.castlewar.screens.DualViewScreen` – builds the castles, handles input, runs both viewports, and owns the overlay.
+  - `com.castlewar.simulation.WorldContext` – single owner of the grid, castle generation, and shared entities (moving cube). Multiple windows reference it to stay in sync.
+  - `com.castlewar.screens.DualViewScreen` – consumes `WorldContext`, handles input, runs both viewports, and owns the overlay.
   - `com.castlewar.entity.MovingCube` – minimal entity showcasing animation between castles.
 
 ### World representation
@@ -40,14 +45,15 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
 - Everything is rendered with `ShapeRenderer` rectangles; no meshes/shaders are involved.
 - Top-down view draws every layer from the deepest visible slice up to the currently selected layer, desaturating lower slices.
 - Side view projects the selected Y slice and looks “through” air to show the nearest solid block, fading color by distance.
-- Split view simply repurposes the same cameras and `Viewport`s with custom screen bounds (upper half for top view, lower half for side view).
-- Overlay text (BitmapFont/SpriteBatch) always summarizes controls for the active mode.
+- Split view now shares the window **side-by-side** (vertical divider) so each panel keeps full height. Detached windows simply render their single perspective.
+- Overlay text (BitmapFont/SpriteBatch) always summarizes controls for the active mode and auto-hides instructions for disabled controls (e.g., detached windows without `'m'`).
 
 ### Coding guidelines
 - Target Java 21 (matches Gradle settings). Favor LibGDX helpers such as `MathUtils` for clamps/lerp.
 - Keep render/update loops allocation-free; reuse shared `ShapeRenderer` and avoid creating new fonts/batches.
 - When modifying controls, update the overlay text and ensure split mode, solo modes, and underground bounds all stay in sync.
 - Any new world content should route through `GridWorld` and the existing block enums so both views stay consistent.
+- Preserve `WorldContext` as the single owner of mutable simulation state. Only one window should advance the simulation clock (controlled via `DualViewScreen.Options.updatesSimulation`) to prevent double updates.
 
 ### Roadmap / TODO reminders
 - Short term: interactive castle editing (placing/removing blocks), highlight stairs/elevators between layers, add more animated entities for depth perception.

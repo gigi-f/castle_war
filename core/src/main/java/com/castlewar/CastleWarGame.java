@@ -4,35 +4,30 @@ import com.badlogic.gdx.Game;
 import com.badlogic.gdx.Gdx;
 import com.castlewar.screens.DualViewScreen;
 import com.castlewar.simulation.SimulationConfig;
-import com.castlewar.world.GridWorld;
+import com.castlewar.simulation.WorldContext;
 
 /**
  * Main game class that bootstraps the Castle War 2D grid simulation.
  */
 public class CastleWarGame extends Game {
-    private SimulationConfig config;
-    private GridWorld gridWorld;
+    private final WorldContext worldContext;
+    private final DualViewScreen.Options viewOptions;
     private DualViewScreen dualViewScreen;
+
+    public CastleWarGame() {
+        this(createDefaultContext(), DualViewScreen.Options.primaryWindow());
+    }
+
+    public CastleWarGame(WorldContext worldContext, DualViewScreen.Options viewOptions) {
+        this.worldContext = worldContext;
+        this.viewOptions = viewOptions;
+    }
 
     @Override
     public void create() {
         Gdx.app.log("CastleWarGame", "Initializing 2D grid simulation...");
-        
-        // Initialize configuration
-        config = new SimulationConfig();
-    config.setWorldWidth(80);   // 80 blocks wide
-    config.setWorldDepth(48);   // 48 blocks deep
-    config.setWorldHeight(32);  // 32 blocks tall
-        
-        // Create grid world with flat terrain
-        gridWorld = new GridWorld(
-            (int) config.getWorldWidth(),
-            (int) config.getWorldDepth(),
-            (int) config.getWorldHeight()
-        );
-        
-        // Set up the dual-view screen
-        dualViewScreen = new DualViewScreen(config, gridWorld);
+
+        dualViewScreen = new DualViewScreen(worldContext, viewOptions);
         setScreen(dualViewScreen);
         
         Gdx.app.log("CastleWarGame", "Initialization complete!");
@@ -44,5 +39,13 @@ public class CastleWarGame extends Game {
             dualViewScreen.dispose();
         }
         super.dispose();
+    }
+
+    private static WorldContext createDefaultContext() {
+        SimulationConfig config = new SimulationConfig();
+        config.setWorldWidth(80);
+        config.setWorldDepth(48);
+        config.setWorldHeight(32);
+        return new WorldContext(config);
     }
 }

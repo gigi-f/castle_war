@@ -14,25 +14,59 @@ import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.castlewar.entity.MovingCube;
 import com.castlewar.renderer.GridRenderer;
-import com.castlewar.simulation.SimulationConfig;
+import com.castlewar.simulation.WorldContext;
 import com.castlewar.world.GridWorld;
 
 /**
  * Screen displaying the world in top-down view with two castles.
  */
 public class DualViewScreen implements Screen {
-    private enum ViewMode {
+    public enum ViewMode {
         TOP_DOWN,
         SIDE_SCROLLER
     }
 
-    private final SimulationConfig config;
+    public static class Options {
+        public final ViewMode initialViewMode;
+        public final boolean allowViewToggle;
+        public final boolean allowSplitView;
+        public final boolean updatesSimulation;
+        public final String overlayLabel;
+
+        private Options(ViewMode initialViewMode,
+                        boolean allowViewToggle,
+                        boolean allowSplitView,
+                        boolean updatesSimulation,
+                        String overlayLabel) {
+            this.initialViewMode = initialViewMode;
+            this.allowViewToggle = allowViewToggle;
+            this.allowSplitView = allowSplitView;
+            this.updatesSimulation = updatesSimulation;
+            this.overlayLabel = overlayLabel;
+        }
+
+        public static Options primaryWindow() {
+            return new Options(ViewMode.TOP_DOWN, true, true, true, "Primary");
+        }
+
+        public static Options topStandalone() {
+            return new Options(ViewMode.TOP_DOWN, false, false, true, "Top");
+        }
+
+        public static Options sideStandalone() {
+            return new Options(ViewMode.SIDE_SCROLLER, false, false, false, "Side");
+        }
+    }
+
+    private final WorldContext worldContext;
     private final GridWorld gridWorld;
     private final GridRenderer gridRenderer;
     private final SpriteBatch overlayBatch;
     private final BitmapFont overlayFont;
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
+    private final MovingCube movingCube;
+    private final Options options;
     
     // Cameras / viewports for each view mode
     private OrthographicCamera topDownCamera;
@@ -48,43 +82,31 @@ public class DualViewScreen implements Screen {
     private int sideViewSlice;
     private boolean keyMinusPressed;
     private boolean keyEqualsPressed;
-    private boolean splitViewEnabled;
+    private boolean splitViewEnabled = true;
+    private float splitViewRatio = 0.5f;
     private boolean keyMPressed;
     
     private final float blockSize = 10f;
-
-    private static final int CASTLE_WIDTH = 14;
-    private static final int CASTLE_HEIGHT = 14;
-    private static final int CASTLE_INTERIOR_LEVELS = 6;
-    private static final int CASTLE_BATTLEMENT_LEVEL = CASTLE_INTERIOR_LEVELS + 1;
-    private static final int CASTLE_ROOF_LEVEL = CASTLE_BATTLEMENT_LEVEL + 1;
-    private static final int CASTLE_TURRET_TOP_LEVEL = CASTLE_ROOF_LEVEL + 2;
-    
-    // Moving cube traveling between castles
-    private MovingCube movingCube;
-    
-    // Castle gate positions
-    private float leftCastleGateX;
-    private float leftCastleGateY;
-    private float rightCastleGateX;
-    private float rightCastleGateY;
     
     // Current Z-level being viewed
     private int currentLayer;
     private boolean keyCommaPressed;
     private boolean keyPeriodPressed;
+    private boolean keyLeftBracketPressed;
+    private boolean keyRightBracketPressed;
 
-    public DualViewScreen(SimulationConfig config, GridWorld gridWorld) {
-        this.config = config;
-        this.gridWorld = gridWorld;
+    public DualViewScreen(WorldContext worldContext, Options options) {
+        this.worldContext = worldContext;
+        this.options = options;
+        this.gridWorld = worldContext.getGridWorld();
         this.gridRenderer = new GridRenderer(blockSize);
         this.overlayBatch = new SpriteBatch();
         this.overlayFont = new BitmapFont();
         this.overlayFont.setColor(Color.WHITE);
-        this.undergroundDepth = gridWorld.getHeight(); // mirror underground depth with sky height
-        this.totalVerticalBlocks = gridWorld.getHeight() + undergroundDepth;
+        this.undergroundDepth = worldContext.getUndergroundDepth();
+        this.totalVerticalBlocks = worldContext.getTotalVerticalBlocks();
+        this.movingCube = worldContext.getMovingCube();
         
-        // Initialize cameras and viewports for each view
         float worldWidth = gridWorld.getWidth() * blockSize;
         float worldDepth = gridWorld.getDepth() * blockSize;
         float totalVerticalPixels = totalVerticalBlocks * blockSize;
@@ -100,52 +122,25 @@ public class DualViewScreen implements Screen {
         sideViewport = new FitViewport(desiredSideWidth, desiredSideHeight, sideCamera);
         float groundPixelY = undergroundDepth * blockSize;
         sideCamera.position.set(worldWidth / 2f, groundPixelY, 0);
+    sideCamera.zoom = SIDE_VIEW_MAX_ZOOM;
         sideCamera.update();
         clampSideCameraPosition();
         
-    viewMode = ViewMode.TOP_DOWN;
-    keySlashPressed = false;
-    keyMinusPressed = false;
-    keyEqualsPressed = false;
-    splitViewEnabled = false;
-    keyMPressed = false;
+        viewMode = options.initialViewMode;
+        keySlashPressed = false;
+        keyMinusPressed = false;
+        keyEqualsPressed = false;
+    splitViewEnabled = options.allowSplitView;
+        keyMPressed = false;
         sideViewSlice = gridWorld.getDepth() / 2;
         
-        // Build castles
-        buildCastles();
-        
-        // Position cube to move between castle gates
-    float cubeZ = 0; // Ground level
-    movingCube = new MovingCube(leftCastleGateX, leftCastleGateY, cubeZ, 8f, leftCastleGateX, rightCastleGateX);
-        
-        // Start viewing at ground level
         currentLayer = 0;
         keyCommaPressed = false;
         keyPeriodPressed = false;
+        keyLeftBracketPressed = false;
+        keyRightBracketPressed = false;
     }
     
-    private void buildCastles() {
-        int width = gridWorld.getWidth();
-        int depth = gridWorld.getDepth();
-        int centerY = depth / 2;
-    int castleStartY = centerY - CASTLE_HEIGHT / 2;
-    int horizontalMargin = 10;
-    int leftStartX = horizontalMargin;
-    int rightStartX = width - CASTLE_WIDTH - horizontalMargin;
-
-    // Left castle (white)
-    buildMultiLevelCastle(leftStartX, castleStartY, CASTLE_WIDTH, CASTLE_HEIGHT,
-        GridWorld.BlockState.CASTLE_WHITE, true);
-    leftCastleGateX = leftStartX + CASTLE_WIDTH - 1;
-    leftCastleGateY = castleStartY + CASTLE_HEIGHT / 2;
-        
-    // Right castle (black)
-    buildMultiLevelCastle(rightStartX, castleStartY, CASTLE_WIDTH, CASTLE_HEIGHT,
-        GridWorld.BlockState.CASTLE_BLACK, false);
-    rightCastleGateX = rightStartX;
-    rightCastleGateY = castleStartY + CASTLE_HEIGHT / 2;
-    }
-
     private boolean isTopViewActive() {
         return splitViewEnabled || viewMode == ViewMode.TOP_DOWN;
     }
@@ -163,164 +158,6 @@ public class DualViewScreen implements Screen {
         sideViewport.setScreenBounds(x, y, Math.max(1, width), Math.max(1, height));
         sideViewport.apply();
     }
-    
-    private void buildMultiLevelCastle(int startX, int startY, int width, int height, 
-                                       GridWorld.BlockState wallType, boolean gateOnRight) {
-        GridWorld.BlockState floorType = getFloorType(wallType);
-
-        // Ground level: walls with moat and gate
-        buildCastle(startX, startY, width, height, wallType, floorType, gateOnRight);
-        
-        // Build upper levels (scaled for larger castles)
-        for (int level = 1; level <= CASTLE_ROOF_LEVEL; level++) {
-            if (level <= CASTLE_INTERIOR_LEVELS) {
-                // Middle levels: full walls with floors
-                buildCastleLevel(startX, startY, width, height, level, wallType, floorType);
-            } else if (level == CASTLE_BATTLEMENT_LEVEL) {
-                // Battlements (crenellations) with interior walkway
-                buildBattlements(startX, startY, width, height, level, wallType, floorType);
-            } else {
-                // Rooftop / observation deck
-                buildRoof(startX, startY, width, height, level, wallType, floorType);
-            }
-        }
-        
-        // Add corner turrets that extend above the rooftop for extra height
-        buildTurret(startX, startY, wallType);
-        buildTurret(startX + width - 1, startY, wallType);
-        buildTurret(startX, startY + height - 1, wallType);
-        buildTurret(startX + width - 1, startY + height - 1, wallType);
-    }
-    
-    private void buildCastleLevel(int startX, int startY, int width, int height, int z, 
-                                  GridWorld.BlockState wallType, GridWorld.BlockState floorType) {
-        // Build walls (hollow rectangle) at this level
-        for (int x = startX; x < startX + width; x++) {
-            // Top and bottom walls
-            gridWorld.setBlock(x, startY, z, wallType);
-            gridWorld.setBlock(x, startY + height - 1, z, wallType);
-        }
-        for (int y = startY; y < startY + height; y++) {
-            // Left and right walls
-            gridWorld.setBlock(startX, y, z, wallType);
-            gridWorld.setBlock(startX + width - 1, y, z, wallType);
-        }
-
-        // Fill interior with a lighter floor to make this level visible
-        fillInteriorWithFloor(startX, startY, width, height, z, floorType);
-    }
-    
-    private void buildBattlements(int startX, int startY, int width, int height, int z, 
-                                  GridWorld.BlockState wallType, GridWorld.BlockState floorType) {
-        // Add a continuous floor under the crenellations for readability
-        fillInteriorWithFloor(startX, startY, width, height, z, floorType);
-
-        // Crenellations pattern: merlon, gap, merlon, gap...
-        // Top and bottom walls
-        for (int x = startX; x < startX + width; x++) {
-            if (x % 2 == 0) { // Every other block
-                gridWorld.setBlock(x, startY, z, wallType);
-                gridWorld.setBlock(x, startY + height - 1, z, wallType);
-            }
-        }
-        // Left and right walls
-        for (int y = startY; y < startY + height; y++) {
-            if (y % 2 == 0) { // Every other block
-                gridWorld.setBlock(startX, y, z, wallType);
-                gridWorld.setBlock(startX + width - 1, y, z, wallType);
-            }
-        }
-    }
-
-    private void buildRoof(int startX, int startY, int width, int height, int z,
-                           GridWorld.BlockState wallType, GridWorld.BlockState floorType) {
-        // Solid parapet around the rooftop
-        for (int x = startX; x < startX + width; x++) {
-            gridWorld.setBlock(x, startY, z, wallType);
-            gridWorld.setBlock(x, startY + height - 1, z, wallType);
-        }
-        for (int y = startY; y < startY + height; y++) {
-            gridWorld.setBlock(startX, y, z, wallType);
-            gridWorld.setBlock(startX + width - 1, y, z, wallType);
-        }
-
-        // Fill rooftop interior
-        fillInteriorWithFloor(startX, startY, width, height, z, floorType);
-
-        // Add a cross brace to make the rooftop distinct
-        int centerX = startX + width / 2;
-        int centerY = startY + height / 2;
-        for (int x = startX + 1; x < startX + width - 1; x++) {
-            gridWorld.setBlock(x, centerY, z, wallType);
-        }
-        for (int y = startY + 1; y < startY + height - 1; y++) {
-            gridWorld.setBlock(centerX, y, z, wallType);
-        }
-    }
-
-    private GridWorld.BlockState getFloorType(GridWorld.BlockState wallType) {
-        return (wallType == GridWorld.BlockState.CASTLE_WHITE)
-            ? GridWorld.BlockState.CASTLE_WHITE_FLOOR
-            : GridWorld.BlockState.CASTLE_BLACK_FLOOR;
-    }
-
-    private void fillInteriorWithFloor(int startX, int startY, int width, int height, int z,
-                                       GridWorld.BlockState floorType) {
-        for (int x = startX + 1; x < startX + width - 1; x++) {
-            for (int y = startY + 1; y < startY + height - 1; y++) {
-                gridWorld.setBlock(x, y, z, floorType);
-            }
-        }
-    }
-    
-    private void buildTurret(int x, int y, GridWorld.BlockState wallType) {
-        // Tower from ground to above the roof (extend extra levels for presence)
-        for (int z = 1; z <= CASTLE_TURRET_TOP_LEVEL; z++) {
-            gridWorld.setBlock(x, y, z, wallType);
-        }
-    }
-    
-    private void buildCastle(int startX, int startY, int width, int height, GridWorld.BlockState wallType,
-                             GridWorld.BlockState floorType, boolean gateOnRight) {
-        // Build moat (water) around castle - 1 block wider on all sides
-        for (int x = startX - 1; x < startX + width + 1; x++) {
-            for (int y = startY - 1; y < startY + height + 1; y++) {
-                if (x >= 0 && x < gridWorld.getWidth() && y >= 0 && y < gridWorld.getDepth()) {
-                    // Only place water in the moat area (not inside castle)
-                    if (x == startX - 1 || x == startX + width || y == startY - 1 || y == startY + height) {
-                        gridWorld.setBlock(x, y, 0, GridWorld.BlockState.STONE); // Using stone for water
-                    }
-                }
-            }
-        }
-        
-        // Build walls (hollow rectangle)
-        for (int x = startX; x < startX + width; x++) {
-            // Top and bottom walls
-            gridWorld.setBlock(x, startY, 0, wallType);
-            gridWorld.setBlock(x, startY + height - 1, 0, wallType);
-        }
-        for (int y = startY; y < startY + height; y++) {
-            // Left and right walls
-            gridWorld.setBlock(startX, y, 0, wallType);
-            gridWorld.setBlock(startX + width - 1, y, 0, wallType);
-        }
-
-        // Fill the ground level interior with floor tiles for readability
-        fillInteriorWithFloor(startX, startY, width, height, 0, floorType);
-        
-        // Create gate (opening) in the middle of the wall closest to center
-        int gateY = startY + height / 2;
-        if (gateOnRight) {
-            // Left castle - gate on right wall, plus bridge over moat
-            gridWorld.setBlock(startX + width - 1, gateY, 0, GridWorld.BlockState.AIR);
-            gridWorld.setBlock(startX + width, gateY, 0, GridWorld.BlockState.DIRT); // Bridge
-        } else {
-            // Right castle - gate on left wall, plus bridge over moat
-            gridWorld.setBlock(startX, gateY, 0, GridWorld.BlockState.AIR);
-            gridWorld.setBlock(startX - 1, gateY, 0, GridWorld.BlockState.DIRT); // Bridge
-        }
-    }
 
     @Override
     public void render(float delta) {
@@ -334,8 +171,9 @@ public class DualViewScreen implements Screen {
         handleSideZoomInput();
         handleSideCameraPan(delta);
         
-        // Update moving cube
-        movingCube.update(delta);
+        if (options.updatesSimulation) {
+            worldContext.update(delta);
+        }
         
         // Clear screen with light gray background
         Gdx.gl.glClearColor(0.9f, 0.9f, 0.9f, 1);
@@ -354,6 +192,10 @@ public class DualViewScreen implements Screen {
     }
     
     private void handleViewToggle() {
+        if (!options.allowViewToggle) {
+            keySlashPressed = false;
+            return;
+        }
         if (Gdx.input.isKeyPressed(Input.Keys.SLASH)) {
             if (!keySlashPressed) {
                 viewMode = (viewMode == ViewMode.TOP_DOWN) ? ViewMode.SIDE_SCROLLER : ViewMode.TOP_DOWN;
@@ -366,6 +208,11 @@ public class DualViewScreen implements Screen {
     }
 
     private void handleSplitViewToggle() {
+        if (!options.allowSplitView) {
+            splitViewEnabled = false;
+            keyMPressed = false;
+            return;
+        }
         if (Gdx.input.isKeyPressed(Input.Keys.M)) {
             if (!keyMPressed) {
                 splitViewEnabled = !splitViewEnabled;
@@ -378,46 +225,58 @@ public class DualViewScreen implements Screen {
     }
 
     private void handleLayerInput() {
-        // Comma key - move down through layers/slices
         boolean topActive = isTopViewActive();
         boolean sideActive = isSideViewActive();
 
         if (Gdx.input.isKeyPressed(Input.Keys.COMMA)) {
-            if (!keyCommaPressed) {
-                if (topActive) {
-                    int nextLayer = Math.max(-undergroundDepth, currentLayer - 1);
-                    if (nextLayer != currentLayer) {
-                        currentLayer = nextLayer;
-                        String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
-                        Gdx.app.log("DualViewScreen", levelDesc);
-                    }
-                }
-                if (sideActive) {
-                    sideViewSlice = Math.max(0, sideViewSlice - 1);
-                    Gdx.app.log("DualViewScreen", "Side view slice Y=" + sideViewSlice);
+            if (!keyCommaPressed && topActive) {
+                int nextLayer = Math.max(-undergroundDepth, currentLayer - 1);
+                if (nextLayer != currentLayer) {
+                    currentLayer = nextLayer;
+                    String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
+                    Gdx.app.log("DualViewScreen", levelDesc);
                 }
             }
             keyCommaPressed = true;
         } else {
             keyCommaPressed = false;
         }
-        
-        // Period key - move up through layers/slices
+
         if (Gdx.input.isKeyPressed(Input.Keys.PERIOD)) {
-            if (!keyPeriodPressed) {
-                if (topActive && currentLayer < gridWorld.getHeight() - 1) {
-                    currentLayer++;
-                    String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
-                    Gdx.app.log("DualViewScreen", levelDesc);
-                }
-                if (sideActive && sideViewSlice < gridWorld.getDepth() - 1) {
-                    sideViewSlice++;
-                    Gdx.app.log("DualViewScreen", "Side view slice Y=" + sideViewSlice);
-                }
+            if (!keyPeriodPressed && topActive && currentLayer < gridWorld.getHeight() - 1) {
+                currentLayer++;
+                String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
+                Gdx.app.log("DualViewScreen", levelDesc);
             }
             keyPeriodPressed = true;
         } else {
             keyPeriodPressed = false;
+        }
+
+        if (Gdx.input.isKeyPressed(Input.Keys.LEFT_BRACKET)) {
+            if (!keyLeftBracketPressed && sideActive) {
+                int nextSlice = Math.max(0, sideViewSlice - 1);
+                if (nextSlice != sideViewSlice) {
+                    sideViewSlice = nextSlice;
+                    Gdx.app.log("DualViewScreen", "Side view slice Y=" + sideViewSlice);
+                }
+            }
+            keyLeftBracketPressed = true;
+        } else {
+            keyLeftBracketPressed = false;
+        }
+
+        if (Gdx.input.isKeyPressed(Input.Keys.RIGHT_BRACKET)) {
+            if (!keyRightBracketPressed && sideActive) {
+                int nextSlice = Math.min(gridWorld.getDepth() - 1, sideViewSlice + 1);
+                if (nextSlice != sideViewSlice) {
+                    sideViewSlice = nextSlice;
+                    Gdx.app.log("DualViewScreen", "Side view slice Y=" + sideViewSlice);
+                }
+            }
+            keyRightBracketPressed = true;
+        } else {
+            keyRightBracketPressed = false;
         }
     }
 
@@ -523,6 +382,8 @@ public class DualViewScreen implements Screen {
         if ((int) movingCube.getZ() <= currentLayer && movingCube.getZ() >= 0) {
             renderCubeTopDown();
         }
+
+        renderSideSliceGuide();
     }
 
     private void renderSideScrollerFullView() {
@@ -575,20 +436,44 @@ public class DualViewScreen implements Screen {
         sr.end();
         
         renderCubeSideView();
+        renderTopLayerGuide();
+    }
+
+    private void renderTopLayerGuide() {
+        if (!isSideViewActive()) {
+            return;
+        }
+        float guideZ = currentLayer;
+        float minZ = -undergroundDepth;
+        float maxZ = gridWorld.getHeight() - 1;
+        if (guideZ < minZ || guideZ > maxZ) {
+            return;
+        }
+        float screenZ = (guideZ + undergroundDepth) * blockSize;
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        if (guideZ >= 0) {
+            sr.setColor(0.1f, 0.4f, 1f, 1f);
+        } else {
+            sr.setColor(0.1f, 0.2f, 0.8f, 0.8f);
+        }
+        float worldWidthPixels = gridWorld.getWidth() * blockSize;
+        sr.rect(0, screenZ - 1f, worldWidthPixels, 2f);
+        sr.end();
     }
 
     private void renderSplitViews() {
         int screenWidth = Gdx.graphics.getWidth();
         int screenHeight = Gdx.graphics.getHeight();
-        int lowerHalfHeight = screenHeight / 2;
-        int upperHalfHeight = screenHeight - lowerHalfHeight;
+        int topWidth = MathUtils.clamp(Math.round(screenWidth * splitViewRatio), 1, screenWidth - 1);
+        int sideWidth = screenWidth - topWidth;
 
-        // Top-down view occupies upper half
-        applyTopDownViewport(0, lowerHalfHeight, screenWidth, upperHalfHeight);
+        // Top-down view occupies the left slice
+        applyTopDownViewport(0, 0, topWidth, screenHeight);
         renderTopDownViewContents();
 
-        // Side view occupies lower half
-        applySideViewport(0, 0, screenWidth, lowerHalfHeight);
+        // Side view occupies the right slice
+        applySideViewport(topWidth, 0, sideWidth, screenHeight);
         renderSideScrollerViewContents();
     }
 
@@ -624,6 +509,23 @@ public class DualViewScreen implements Screen {
         
         sr.end();
     }
+
+    private void renderSideSliceGuide() {
+        if (!isTopViewActive()) {
+            return;
+        }
+        int guideY = sideViewSlice;
+        if (guideY < 0 || guideY >= gridWorld.getDepth()) {
+            return;
+        }
+        float screenY = guideY * blockSize;
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        sr.setColor(0.1f, 0.4f, 1f, 0.9f);
+        float worldWidthPixels = gridWorld.getWidth() * blockSize;
+        sr.rect(0, screenY - 1f, worldWidthPixels, 2f);
+        sr.end();
+    }
     
     private Color getBlockColor(GridWorld.BlockState block) {
         switch (block) {
@@ -654,16 +556,56 @@ public class DualViewScreen implements Screen {
         sr.rect(10, Gdx.graphics.getHeight() - 30, 560, 25);
         sr.end();
         
+        String labelPrefix = (options.overlayLabel == null || options.overlayLabel.isEmpty())
+            ? ""
+            : "[" + options.overlayLabel + "] ";
         String info;
         if (splitViewEnabled) {
             String topDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
-            info = "Split view: Top " + topDesc + ", Side Y=" + sideViewSlice +
-                   "  (comma/period adjust, arrows pan, -/= zoom, '/' swap focus, 'm' toggle)";
+            StringBuilder builder = new StringBuilder(labelPrefix)
+                .append("Split: Top ")
+                .append(topDesc)
+                .append(", Side Y=")
+                .append(sideViewSlice)
+                .append("  (comma/period = top layers, '['/']' = side slices, arrows pan, -/= zoom");
+            if (options.allowViewToggle) {
+                builder.append(", '/' swaps focus");
+            }
+            if (options.allowSplitView) {
+                builder.append(", 'm' toggle");
+            }
+            builder.append(')');
+            info = builder.toString();
         } else if (viewMode == ViewMode.TOP_DOWN) {
             String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
-            info = "Top view: " + levelDesc + "  (comma/period to change, '/' for side view, 'm' for split)";
+            StringBuilder builder = new StringBuilder(labelPrefix)
+                .append("Top view: ")
+                .append(levelDesc)
+                .append("  (comma/period change layers");
+            if (options.allowViewToggle || options.allowSplitView) {
+                builder.append(", '['/']' side slices");
+            }
+            if (options.allowViewToggle) {
+                builder.append(", '/' for side view");
+            }
+            if (options.allowSplitView) {
+                builder.append(", 'm' split");
+            }
+            builder.append(')');
+            info = builder.toString();
         } else {
-            info = "Side view slice Y=" + sideViewSlice + "  (comma/period slice, arrows pan, -/= zoom, '/' for top view, 'm' for split)";
+            StringBuilder builder = new StringBuilder(labelPrefix)
+                .append("Side view slice Y=")
+                .append(sideViewSlice)
+                .append("  ('['/']' = slice, arrows pan, -/= zoom");
+            if (options.allowViewToggle) {
+                builder.append(", '/' for top view");
+            }
+            if (options.allowSplitView) {
+                builder.append(", 'm' split");
+            }
+            builder.append(')');
+            info = builder.toString();
         }
         overlayBatch.begin();
         overlayFont.draw(overlayBatch, info, 20, Gdx.graphics.getHeight() - 10);
@@ -711,7 +653,16 @@ public class DualViewScreen implements Screen {
 
     @Override
     public void show() {
-        Gdx.app.log("DualViewScreen", "Top-down castle view activated. Press '/' to toggle side view.");
+        StringBuilder builder = new StringBuilder("View ready: ")
+            .append(viewMode == ViewMode.TOP_DOWN ? "top-down" : "side")
+            .append(" window.");
+        if (options.allowViewToggle) {
+            builder.append(" Press '/' to swap modes.");
+        }
+        if (options.allowSplitView) {
+            builder.append(" Press 'm' for split view.");
+        }
+        Gdx.app.log("DualViewScreen", builder.toString());
     }
 
     @Override
