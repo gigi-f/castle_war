@@ -1,0 +1,17 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    withSourcesJar()
+}
+
+dependencies {
+    api "com.badlogicgames.gdx:gdx:${rootProject.ext.gdxVersion}"
+
+    testImplementation platform("org.junit:junit-bom:${rootProject.ext.junitVersion}")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+}

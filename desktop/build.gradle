@@ -1,0 +1,27 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'com.castlewar.desktop.DesktopLauncher'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    implementation project(':core')
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:${rootProject.ext.gdxVersion}"
+    runtimeOnly "com.badlogicgames.gdx:gdx-platform:${rootProject.ext.gdxVersion}:natives-desktop"
+
+    testImplementation platform("org.junit:junit-bom:${rootProject.ext.junitVersion}")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+}
+
+tasks.named('run', JavaExec) {
+    workingDir = project.file('../core/assets')
+    standardInput = System.in
+}

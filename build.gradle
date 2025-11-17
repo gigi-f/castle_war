@@ -1,0 +1,31 @@
+ext {
+    gdxVersion = '1.12.1'
+    junitVersion = '5.11.0'
+}
+
+allprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    configurations.all {
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        testLogging {
+            events "passed", "failed", "skipped"
+            exceptionFormat "full"
+        }
+    }
+}
+
+// Convenience task to launch the desktop target from the root
+tasks.register('runDesktop') {
+    group = 'application'
+    description = 'Runs the desktop launcher (depends on :desktop:run).'
+    dependsOn(':desktop:run')
+}
