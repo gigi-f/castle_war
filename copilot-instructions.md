@@ -1,42 +1,55 @@
 ## Castle War – Copilot Instructions
 UPDATE THIS FILE AFTER EVERY PROMPT!!!
-### Core vision
-- MVP goal: Minecraft-style voxel world rendered in two simultaneous side-by-side viewports—side view (X/Z) and top-down view (X/Y).
-- Full 3D world space using `Vector3`: X=east/west, Y=depth/north-south, Z=elevation/height.
-- Both cameras share a synchronized focus point but view it from different angles (orthographic projection).
-- Interactive camera controls allow independent pan/zoom/rotate per viewport while maintaining synchronized position.
 
-### Architecture & modules
-- `core` module houses all cross-platform game logic (voxel system, rendering, input, screens).
-- `desktop` module contains only the LWJGL3 launcher/config; avoid game logic here so other targets can be added later.
-- Maintain clean packages:
-  - `com.castlewar.voxel` – voxel world system (BlockType, Chunk, VoxelWorld, VoxelMeshBuilder, VoxelRenderer).
-  - `com.castlewar.input` – camera controllers for independent viewport manipulation.
-  - `com.castlewar.simulation` – world configuration (dimensions, future gameplay parameters).
-  - `com.castlewar.screens` – LibGDX `Screen` implementations (DualViewScreen with side-by-side layout).
+### Core vision (current build)
+- Deliver a readable, layered castle sandbox rendered on a 2D grid. The player can inspect tall castles, moats, and underground layers from both a top-down slice view and a side-scroller profile.
+- Focus on clarity and navigation tools (layer stepping, zoom, split view) rather than voxel/3D rendering. All gameplay happens inside `DualViewScreen` using LibGDX’s `ShapeRenderer`.
+- Maintain smooth UX: instant key responses, minimal allocations per frame, and obvious visual cues when switching layers or views.
 
-### Voxel world guidelines
-- World coordinates: X = east/west, Y = depth/north-south, Z = elevation/height (standard 3D right-handed system).
-- Chunk-based storage: 16×16×16 blocks per chunk, stored in HashMap with packed long key.
-- Face culling optimization: only render faces adjacent to non-solid blocks (air or chunk boundaries).
-- Flat terrain at z=0 for MVP; future: procedural generation with noise functions.
-- Block types: AIR (non-solid), GRASS/DIRT/STONE (terrain), CASTLE_WHITE/CASTLE_BLACK (structures).
-- Prefer deterministic math utilities from LibGDX (`MathUtils`) over `java.lang.Math` for consistency.
+### Key features & controls
+- **Views**
+  - `/` toggles between solo top-down mode and solo side view.
+  - `m` toggles split mode, showing top view on the upper half and side view on the lower half (both always live).
+- **Layer navigation**
+  - `,` steps downward through Z layers (includes mirrored underground levels equal in depth to the sky height).
+  - `.` steps upward until the top of the constructed world (currently 32 blocks above ground).
+- **Side view extras** (active in solo or split mode):
+  - Arrow keys pan the orthographic camera.
+  - `-` / `=` zoom out / in (clamped to [0.5×, 3×]).
+  - Side rendering shows the first non-air block along the camera slice and fades distant layers for depth.
+- **Moving cube** travels between the two castle gates to demonstrate synchronization between views.
 
-### Rendering & camera controls
-- Side-by-side viewport layout: left=side view (X/Z), right=top-down view (X/Y).
-- Each viewport has independent OrthographicCamera with shared focus point (Vector3).
-- Custom OpenGL shaders for voxel rendering: vertex shader transforms position, fragment shader applies per-vertex color.
-- Mesh-based rendering: LibGDX Mesh class with position (vec3) + color (vec4) attributes.
-- Camera controls: WASD pan, scroll zoom, Q/E rotate, right-click drag for mouse pan.
-- Blue 4px divider line between viewports rendered with ShapeRenderer (2D overlay).
+### Architecture overview
+- Modules:
+  - `core`: all gameplay logic, rendering, and input (`com.castlewar.*`).
+  - `desktop`: LWJGL3 launcher only—keep it free of game logic for future targets.
+- Important packages/classes:
+  - `com.castlewar.CasteWarGame` – configures the world (currently 80×48×32) and boots `DualViewScreen`.
+  - `com.castlewar.world.GridWorld` – simple `(x,y,z)` block array with mirrored subterranean layers.
+  - `com.castlewar.renderer.GridRenderer` – wraps a shared `ShapeRenderer` and color palette.
+  - `com.castlewar.screens.DualViewScreen` – builds the castles, handles input, runs both viewports, and owns the overlay.
+  - `com.castlewar.entity.MovingCube` – minimal entity showcasing animation between castles.
 
-### Coding style
-- Target Java 17. Use LibGDX idioms (e.g., `Vector3.mulAdd`, `MathUtils` helpers) and avoid unnecessary allocations inside render/update loops.
-- Keep constructors short; move derived behavior into helper methods where possible.
-- When adding new functionality, update tests (when introduced) or provide lightweight sanity harnesses.
+### World representation
+- Blocks are stored in a fixed array sized by `SimulationConfig` (currently 80×48×32). Negative Z values are synthesized as dirt/stone to represent underground without expanding the array.
+- Block states include: `AIR`, `GRASS`, `DIRT`, `STONE` (moats), `CASTLE_WHITE/BLACK`, and matching `_FLOOR` variants for interior levels.
+- Two castles are procedurally built per run, now doubled to 14×14 footprints with six interior floors, battlements, roofs, and turrets that reach `CASTLE_TURRET_TOP_LEVEL`.
+- A moat/bridge surround is carved automatically, and underground depth mirrors sky height to keep layer navigation symmetric.
 
-### Roadmap reminders
-- Near-term: block placement/removal with mouse picking, voxel castles (multi-block structures), procedural terrain.
-- Mid-term: unit entities that navigate voxel terrain, lighting/shadows, particle effects, greedy meshing optimization.
-- Long-term: networked multiplayer, advanced AI behaviors, saving/loading worlds, texture atlases instead of flat colors.
+### Rendering pipeline
+- Everything is rendered with `ShapeRenderer` rectangles; no meshes/shaders are involved.
+- Top-down view draws every layer from the deepest visible slice up to the currently selected layer, desaturating lower slices.
+- Side view projects the selected Y slice and looks “through” air to show the nearest solid block, fading color by distance.
+- Split view simply repurposes the same cameras and `Viewport`s with custom screen bounds (upper half for top view, lower half for side view).
+- Overlay text (BitmapFont/SpriteBatch) always summarizes controls for the active mode.
+
+### Coding guidelines
+- Target Java 21 (matches Gradle settings). Favor LibGDX helpers such as `MathUtils` for clamps/lerp.
+- Keep render/update loops allocation-free; reuse shared `ShapeRenderer` and avoid creating new fonts/batches.
+- When modifying controls, update the overlay text and ensure split mode, solo modes, and underground bounds all stay in sync.
+- Any new world content should route through `GridWorld` and the existing block enums so both views stay consistent.
+
+### Roadmap / TODO reminders
+- Short term: interactive castle editing (placing/removing blocks), highlight stairs/elevators between layers, add more animated entities for depth perception.
+- Mid term: texture/gradient improvements, lighting cues for underground, and UI labels that show absolute coordinates.
+- Long term: return to voxel/mesh rendering once the 2D UX is perfected; keep current code ready for incremental upgrades (e.g., replacing `ShapeRenderer` with batches of sprites).

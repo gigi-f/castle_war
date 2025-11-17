@@ -48,6 +48,8 @@ public class DualViewScreen implements Screen {
     private int sideViewSlice;
     private boolean keyMinusPressed;
     private boolean keyEqualsPressed;
+    private boolean splitViewEnabled;
+    private boolean keyMPressed;
     
     private final float blockSize = 10f;
 
@@ -105,6 +107,8 @@ public class DualViewScreen implements Screen {
     keySlashPressed = false;
     keyMinusPressed = false;
     keyEqualsPressed = false;
+    splitViewEnabled = false;
+    keyMPressed = false;
         sideViewSlice = gridWorld.getDepth() / 2;
         
         // Build castles
@@ -140,6 +144,24 @@ public class DualViewScreen implements Screen {
         GridWorld.BlockState.CASTLE_BLACK, false);
     rightCastleGateX = rightStartX;
     rightCastleGateY = castleStartY + CASTLE_HEIGHT / 2;
+    }
+
+    private boolean isTopViewActive() {
+        return splitViewEnabled || viewMode == ViewMode.TOP_DOWN;
+    }
+
+    private boolean isSideViewActive() {
+        return splitViewEnabled || viewMode == ViewMode.SIDE_SCROLLER;
+    }
+
+    private void applyTopDownViewport(int x, int y, int width, int height) {
+        topDownViewport.setScreenBounds(x, y, Math.max(1, width), Math.max(1, height));
+        topDownViewport.apply();
+    }
+
+    private void applySideViewport(int x, int y, int width, int height) {
+        sideViewport.setScreenBounds(x, y, Math.max(1, width), Math.max(1, height));
+        sideViewport.apply();
     }
     
     private void buildMultiLevelCastle(int startX, int startY, int width, int height, 
@@ -304,6 +326,7 @@ public class DualViewScreen implements Screen {
     public void render(float delta) {
         // Handle input for view toggling and navigation
         handleViewToggle();
+        handleSplitViewToggle();
         handleLayerInput();
         if (gridWorld.getDepth() > 0) {
             sideViewSlice = Math.max(0, Math.min(sideViewSlice, gridWorld.getDepth() - 1));
@@ -318,10 +341,12 @@ public class DualViewScreen implements Screen {
         Gdx.gl.glClearColor(0.9f, 0.9f, 0.9f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-        if (viewMode == ViewMode.TOP_DOWN) {
-            renderTopDownView();
+        if (splitViewEnabled) {
+            renderSplitViews();
+        } else if (viewMode == ViewMode.TOP_DOWN) {
+            renderTopDownFullView();
         } else {
-            renderSideScrollerView();
+            renderSideScrollerFullView();
         }
         
         // Display view info overlay/logging
@@ -340,18 +365,34 @@ public class DualViewScreen implements Screen {
         }
     }
 
+    private void handleSplitViewToggle() {
+        if (Gdx.input.isKeyPressed(Input.Keys.M)) {
+            if (!keyMPressed) {
+                splitViewEnabled = !splitViewEnabled;
+                Gdx.app.log("DualViewScreen", splitViewEnabled ? "Split view enabled" : "Split view disabled");
+            }
+            keyMPressed = true;
+        } else {
+            keyMPressed = false;
+        }
+    }
+
     private void handleLayerInput() {
         // Comma key - move down through layers/slices
+        boolean topActive = isTopViewActive();
+        boolean sideActive = isSideViewActive();
+
         if (Gdx.input.isKeyPressed(Input.Keys.COMMA)) {
             if (!keyCommaPressed) {
-                if (viewMode == ViewMode.TOP_DOWN) {
+                if (topActive) {
                     int nextLayer = Math.max(-undergroundDepth, currentLayer - 1);
                     if (nextLayer != currentLayer) {
                         currentLayer = nextLayer;
                         String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
                         Gdx.app.log("DualViewScreen", levelDesc);
                     }
-                } else {
+                }
+                if (sideActive) {
                     sideViewSlice = Math.max(0, sideViewSlice - 1);
                     Gdx.app.log("DualViewScreen", "Side view slice Y=" + sideViewSlice);
                 }
@@ -364,17 +405,14 @@ public class DualViewScreen implements Screen {
         // Period key - move up through layers/slices
         if (Gdx.input.isKeyPressed(Input.Keys.PERIOD)) {
             if (!keyPeriodPressed) {
-                if (viewMode == ViewMode.TOP_DOWN) {
-                    if (currentLayer < gridWorld.getHeight() - 1) {
-                        currentLayer++;
-                        String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
-                        Gdx.app.log("DualViewScreen", levelDesc);
-                    }
-                } else {
-                    if (sideViewSlice < gridWorld.getDepth() - 1) {
-                        sideViewSlice++;
-                        Gdx.app.log("DualViewScreen", "Side view slice Y=" + sideViewSlice);
-                    }
+                if (topActive && currentLayer < gridWorld.getHeight() - 1) {
+                    currentLayer++;
+                    String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
+                    Gdx.app.log("DualViewScreen", levelDesc);
+                }
+                if (sideActive && sideViewSlice < gridWorld.getDepth() - 1) {
+                    sideViewSlice++;
+                    Gdx.app.log("DualViewScreen", "Side view slice Y=" + sideViewSlice);
                 }
             }
             keyPeriodPressed = true;
@@ -384,7 +422,7 @@ public class DualViewScreen implements Screen {
     }
 
     private void handleSideZoomInput() {
-        if (viewMode != ViewMode.SIDE_SCROLLER) {
+        if (!isSideViewActive()) {
             keyMinusPressed = false;
             keyEqualsPressed = false;
             return;
@@ -414,7 +452,7 @@ public class DualViewScreen implements Screen {
     }
 
     private void handleSideCameraPan(float delta) {
-        if (viewMode != ViewMode.SIDE_SCROLLER) {
+        if (!isSideViewActive()) {
             return;
         }
         float moveX = 0f;
@@ -465,8 +503,12 @@ public class DualViewScreen implements Screen {
         sideCamera.update();
     }
     
-    private void renderTopDownView() {
-        topDownViewport.apply();
+    private void renderTopDownFullView() {
+        applyTopDownViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        renderTopDownViewContents();
+    }
+
+    private void renderTopDownViewContents() {
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.setProjectionMatrix(topDownCamera.combined);
         
@@ -483,8 +525,12 @@ public class DualViewScreen implements Screen {
         }
     }
 
-    private void renderSideScrollerView() {
-        sideViewport.apply();
+    private void renderSideScrollerFullView() {
+        applySideViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        renderSideScrollerViewContents();
+    }
+
+    private void renderSideScrollerViewContents() {
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.setProjectionMatrix(sideCamera.combined);
         
@@ -529,6 +575,21 @@ public class DualViewScreen implements Screen {
         sr.end();
         
         renderCubeSideView();
+    }
+
+    private void renderSplitViews() {
+        int screenWidth = Gdx.graphics.getWidth();
+        int screenHeight = Gdx.graphics.getHeight();
+        int lowerHalfHeight = screenHeight / 2;
+        int upperHalfHeight = screenHeight - lowerHalfHeight;
+
+        // Top-down view occupies upper half
+        applyTopDownViewport(0, lowerHalfHeight, screenWidth, upperHalfHeight);
+        renderTopDownViewContents();
+
+        // Side view occupies lower half
+        applySideViewport(0, 0, screenWidth, lowerHalfHeight);
+        renderSideScrollerViewContents();
     }
 
     private void renderLayer(int z, float opacity) {
@@ -589,16 +650,20 @@ public class DualViewScreen implements Screen {
         // Render a translucent bar for overlay text (placeholder for font rendering)
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.begin(ShapeRenderer.ShapeType.Filled);
-    sr.setColor(0, 0, 0, 0.7f);
-    sr.rect(10, Gdx.graphics.getHeight() - 30, 440, 25);
+        sr.setColor(0, 0, 0, 0.7f);
+        sr.rect(10, Gdx.graphics.getHeight() - 30, 560, 25);
         sr.end();
         
         String info;
-        if (viewMode == ViewMode.TOP_DOWN) {
+        if (splitViewEnabled) {
+            String topDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
+            info = "Split view: Top " + topDesc + ", Side Y=" + sideViewSlice +
+                   "  (comma/period adjust, arrows pan, -/= zoom, '/' swap focus, 'm' toggle)";
+        } else if (viewMode == ViewMode.TOP_DOWN) {
             String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
-            info = "Top view: " + levelDesc + "  (comma/period to change, '/' for side view)";
+            info = "Top view: " + levelDesc + "  (comma/period to change, '/' for side view, 'm' for split)";
         } else {
-            info = "Side view slice Y=" + sideViewSlice + "  (comma/period slice, arrows pan, -/= zoom, '/' for top view)";
+            info = "Side view slice Y=" + sideViewSlice + "  (comma/period slice, arrows pan, -/= zoom, '/' for top view, 'm' for split)";
         }
         overlayBatch.begin();
         overlayFont.draw(overlayBatch, info, 20, Gdx.graphics.getHeight() - 10);
