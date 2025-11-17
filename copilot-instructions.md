@@ -21,8 +21,8 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
   - `-` / `=` zoom out / in (clamped to [0.5×, 3×]).
   - Side rendering shows the first non-air block along the camera slice, fades distant layers for depth, and overlays a thin blue horizontal guide matching the currently selected top-down layer.
 - **Isometric view** (toggle with `i`)
-  - Flipped 180° to mirror the top view and now renders **every** vertical layer simultaneously, fading layers above the current slice for context.
-  - Shares the comma/period and bracket controls for layer + slice navigation, and adds WASD panning plus `-`/`=` zoom controls while active.
+  - Flipped 180° to mirror the top view and now renders **every** vertical layer simultaneously, keeping the focused layer at full opacity while all others sit at 50%.
+  - Shares the comma/period and bracket controls for layer + slice navigation, adds WASD panning plus `-`/`=` zoom controls while active, and now shows the red moving cube gliding between castles.
 - **Top view cues**
   - The top-down renderer now includes a matching horizontal blue line that marks the Y-slice currently displayed in the side view, keeping both panels synchronized visually.
 - **Moving cube** travels between the two castle gates to demonstrate synchronization between views.

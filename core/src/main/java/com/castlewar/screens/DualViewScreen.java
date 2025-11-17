@@ -10,6 +10,7 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.castlewar.entity.MovingCube;
@@ -64,6 +65,7 @@ public class DualViewScreen implements Screen {
     private final GridRenderer gridRenderer;
     private final SpriteBatch overlayBatch;
     private final BitmapFont overlayFont;
+    private final Matrix4 overlayProjection;
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
     private final MovingCube movingCube;
@@ -115,6 +117,7 @@ public class DualViewScreen implements Screen {
         this.overlayBatch = new SpriteBatch();
         this.overlayFont = new BitmapFont();
         this.overlayFont.setColor(Color.WHITE);
+    this.overlayProjection = new Matrix4();
         this.undergroundDepth = worldContext.getUndergroundDepth();
         this.totalVerticalBlocks = worldContext.getTotalVerticalBlocks();
         this.movingCube = worldContext.getMovingCube();
@@ -565,6 +568,8 @@ public class DualViewScreen implements Screen {
     private void renderIsometricViewContents() {
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.setProjectionMatrix(isoCamera.combined);
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         sr.begin(ShapeRenderer.ShapeType.Filled);
         int width = gridWorld.getWidth();
         int depth = gridWorld.getDepth();
@@ -572,7 +577,8 @@ public class DualViewScreen implements Screen {
         int minZ = -undergroundDepth;
 
         for (int z = minZ; z <= maxZ; z++) {
-            float layerOpacity = z > currentLayer ? 0.25f : 1f;
+            boolean focusedLayer = (z == currentLayer);
+            float layerOpacity = focusedLayer ? 1f : 0.5f;
             for (int x = 0; x < width; x++) {
                 for (int y = 0; y < depth; y++) {
                     GridWorld.BlockState block = gridWorld.getBlock(x, y, z);
@@ -580,12 +586,30 @@ public class DualViewScreen implements Screen {
                         continue;
                     }
                     Color baseColor = getBlockColor(block);
-                    sr.setColor(baseColor.r, baseColor.g, baseColor.b, layerOpacity);
+                    float r = baseColor.r;
+                    float g = baseColor.g;
+                    float b = baseColor.b;
+                    if (!focusedLayer) {
+                        float gray = (r + g + b) / 3f;
+                        float emphasis = 0.6f;
+                        r = MathUtils.lerp(gray, r, emphasis);
+                        g = MathUtils.lerp(gray, g, emphasis);
+                        b = MathUtils.lerp(gray, b, emphasis);
+                    }
+                    sr.setColor(r, g, b, layerOpacity);
                     drawIsoTile(sr, x, y, z);
                 }
             }
         }
+        if (movingCube != null) {
+            float cubeZ = movingCube.getZ();
+            if (cubeZ >= minZ && cubeZ <= maxZ) {
+                sr.setColor(Color.RED);
+                drawIsoCubeMarker(sr, movingCube.getX(), movingCube.getY(), cubeZ);
+            }
+        }
         sr.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
     private void renderTopLayerGuide() {
@@ -688,6 +712,24 @@ public class DualViewScreen implements Screen {
     sr.triangle(centerX, centerY + halfH, centerX - halfW, centerY, centerX + halfW, centerY);
     sr.triangle(centerX, centerY - halfH, centerX - halfW, centerY, centerX + halfW, centerY);
     }
+
+    private void drawIsoCubeMarker(ShapeRenderer sr, float x, float y, float z) {
+        float isoX = (y - x) * (isoTileWidth / 2f);
+        float isoY = (x + y) * (isoTileHeight / 2f) + (z * isoBlockHeight);
+        float centerX = isoOriginX + isoX;
+        float centerY = isoOriginY + isoY + isoBlockHeight * 0.2f;
+        float halfW = isoTileWidth * 0.25f;
+        float halfH = isoTileHeight * 0.25f;
+        float bodyHeight = isoBlockHeight * 0.4f;
+
+        // Top diamond
+        sr.triangle(centerX, centerY + halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+        sr.triangle(centerX, centerY - halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+
+        // Front face
+        sr.triangle(centerX - halfW, centerY, centerX - halfW, centerY - bodyHeight, centerX, centerY - halfH);
+        sr.triangle(centerX + halfW, centerY, centerX + halfW, centerY - bodyHeight, centerX, centerY - halfH);
+    }
     
     private Color getBlockColor(GridWorld.BlockState block) {
         switch (block) {
@@ -713,6 +755,8 @@ public class DualViewScreen implements Screen {
     private void renderOverlay() {
         // Render a translucent bar for overlay text (placeholder for font rendering)
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        overlayProjection.setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        sr.setProjectionMatrix(overlayProjection);
         sr.begin(ShapeRenderer.ShapeType.Filled);
         sr.setColor(0, 0, 0, 0.7f);
         sr.rect(10, Gdx.graphics.getHeight() - 30, 560, 25);
@@ -781,7 +825,8 @@ public class DualViewScreen implements Screen {
             builder.append(')');
             info = builder.toString();
         }
-        overlayBatch.begin();
+    overlayBatch.setProjectionMatrix(overlayProjection);
+    overlayBatch.begin();
         overlayFont.draw(overlayBatch, info, 20, Gdx.graphics.getHeight() - 10);
         overlayBatch.end();
     }
