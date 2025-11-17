@@ -12,6 +12,7 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
   - The primary window boots with split view already enabled and the side camera fully zoomed out for maximum context—tap `m` if you want to collapse back to a single panel.
   - `/` still swaps perspectives, but only in windows configured to allow it (default: the primary window). The detached side window is locked to the side view.
   - `m` toggles the in-window split view (top on the left, side on the right, both full height). Detached windows ignore this key.
+  - `i` toggles a **full-screen isometric view** that shares the same layer/slice controls; split view temporarily disables while this mode is active.
 - **Layer navigation**
   - `,` / `.` adjust the top-down layer independently.
   - `[` / `]` adjust the side-view slice independently, even while the top view stays on a different layer.
@@ -19,6 +20,9 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
   - Arrow keys pan the orthographic camera.
   - `-` / `=` zoom out / in (clamped to [0.5×, 3×]).
   - Side rendering shows the first non-air block along the camera slice, fades distant layers for depth, and overlays a thin blue horizontal guide matching the currently selected top-down layer.
+- **Isometric view** (toggle with `i`)
+  - Flipped 180° to mirror the top view and now renders **every** vertical layer simultaneously, fading layers above the current slice for context.
+  - Shares the comma/period and bracket controls for layer + slice navigation, and adds WASD panning plus `-`/`=` zoom controls while active.
 - **Top view cues**
   - The top-down renderer now includes a matching horizontal blue line that marks the Y-slice currently displayed in the side view, keeping both panels synchronized visually.
 - **Moving cube** travels between the two castle gates to demonstrate synchronization between views.

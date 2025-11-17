@@ -23,7 +23,8 @@ import com.castlewar.world.GridWorld;
 public class DualViewScreen implements Screen {
     public enum ViewMode {
         TOP_DOWN,
-        SIDE_SCROLLER
+        SIDE_SCROLLER,
+        ISOMETRIC
     }
 
     public static class Options {
@@ -73,10 +74,18 @@ public class DualViewScreen implements Screen {
     private Viewport topDownViewport;
     private OrthographicCamera sideCamera;
     private Viewport sideViewport;
+    private OrthographicCamera isoCamera;
+    private Viewport isoViewport;
     private final float sideCameraPanSpeed = 200f; // pixels per second
     private static final float SIDE_VIEW_MIN_ZOOM = 0.5f;
     private static final float SIDE_VIEW_MAX_ZOOM = 3.0f;
     private static final float SIDE_VIEW_ZOOM_STEP = 0.15f;
+    private final float isoTileWidth;
+    private final float isoTileHeight;
+    private final float isoBlockHeight;
+    private float isoOriginX;
+    private float isoOriginY;
+    private float isoZoom = 1f;
     private ViewMode viewMode;
     private boolean keySlashPressed;
     private int sideViewSlice;
@@ -85,6 +94,7 @@ public class DualViewScreen implements Screen {
     private boolean splitViewEnabled = true;
     private float splitViewRatio = 0.5f;
     private boolean keyMPressed;
+    private boolean keyIPressed;
     
     private final float blockSize = 10f;
     
@@ -94,6 +104,8 @@ public class DualViewScreen implements Screen {
     private boolean keyPeriodPressed;
     private boolean keyLeftBracketPressed;
     private boolean keyRightBracketPressed;
+    private ViewMode lastNonIsometricMode;
+    private boolean splitViewBeforeIsometric;
 
     public DualViewScreen(WorldContext worldContext, Options options) {
         this.worldContext = worldContext;
@@ -106,6 +118,9 @@ public class DualViewScreen implements Screen {
         this.undergroundDepth = worldContext.getUndergroundDepth();
         this.totalVerticalBlocks = worldContext.getTotalVerticalBlocks();
         this.movingCube = worldContext.getMovingCube();
+        this.isoTileWidth = blockSize;
+        this.isoTileHeight = blockSize * 0.5f;
+        this.isoBlockHeight = blockSize * 0.6f;
         
         float worldWidth = gridWorld.getWidth() * blockSize;
         float worldDepth = gridWorld.getDepth() * blockSize;
@@ -125,6 +140,17 @@ public class DualViewScreen implements Screen {
     sideCamera.zoom = SIDE_VIEW_MAX_ZOOM;
         sideCamera.update();
         clampSideCameraPosition();
+
+        float isoWorldWidth = (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileWidth / 2f) + blockSize * 8f;
+        float isoWorldHeight = (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileHeight / 2f)
+            + gridWorld.getHeight() * isoBlockHeight + blockSize * 8f;
+        isoCamera = new OrthographicCamera();
+        isoViewport = new FitViewport(isoWorldWidth, isoWorldHeight, isoCamera);
+        isoCamera.position.set(isoWorldWidth / 2f, isoWorldHeight / 2f, 0f);
+        isoCamera.update();
+        isoOriginX = isoWorldWidth / 2f;
+        isoOriginY = gridWorld.getHeight() * isoBlockHeight
+            + (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileHeight / 4f);
         
         viewMode = options.initialViewMode;
         keySlashPressed = false;
@@ -132,6 +158,7 @@ public class DualViewScreen implements Screen {
         keyEqualsPressed = false;
     splitViewEnabled = options.allowSplitView;
         keyMPressed = false;
+        keyIPressed = false;
         sideViewSlice = gridWorld.getDepth() / 2;
         
         currentLayer = 0;
@@ -139,10 +166,12 @@ public class DualViewScreen implements Screen {
         keyPeriodPressed = false;
         keyLeftBracketPressed = false;
         keyRightBracketPressed = false;
+        lastNonIsometricMode = viewMode;
+        splitViewBeforeIsometric = splitViewEnabled;
     }
     
     private boolean isTopViewActive() {
-        return splitViewEnabled || viewMode == ViewMode.TOP_DOWN;
+        return splitViewEnabled || viewMode == ViewMode.TOP_DOWN || viewMode == ViewMode.ISOMETRIC;
     }
 
     private boolean isSideViewActive() {
@@ -159,10 +188,16 @@ public class DualViewScreen implements Screen {
         sideViewport.apply();
     }
 
+    private void applyIsometricViewport(int x, int y, int width, int height) {
+        isoViewport.setScreenBounds(x, y, Math.max(1, width), Math.max(1, height));
+        isoViewport.apply();
+    }
+
     @Override
     public void render(float delta) {
         // Handle input for view toggling and navigation
         handleViewToggle();
+        handleIsometricToggle();
         handleSplitViewToggle();
         handleLayerInput();
         if (gridWorld.getDepth() > 0) {
@@ -170,6 +205,8 @@ public class DualViewScreen implements Screen {
         }
         handleSideZoomInput();
         handleSideCameraPan(delta);
+        handleIsoZoomInput();
+        handleIsoCameraPan(delta);
         
         if (options.updatesSimulation) {
             worldContext.update(delta);
@@ -179,7 +216,9 @@ public class DualViewScreen implements Screen {
         Gdx.gl.glClearColor(0.9f, 0.9f, 0.9f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-        if (splitViewEnabled) {
+        if (viewMode == ViewMode.ISOMETRIC) {
+            renderIsometricFullView();
+        } else if (splitViewEnabled) {
             renderSplitViews();
         } else if (viewMode == ViewMode.TOP_DOWN) {
             renderTopDownFullView();
@@ -196,6 +235,11 @@ public class DualViewScreen implements Screen {
             keySlashPressed = false;
             return;
         }
+        if (viewMode == ViewMode.ISOMETRIC) {
+            // Let the dedicated handler manage exiting isometric mode.
+            keySlashPressed = false;
+            return;
+        }
         if (Gdx.input.isKeyPressed(Input.Keys.SLASH)) {
             if (!keySlashPressed) {
                 viewMode = (viewMode == ViewMode.TOP_DOWN) ? ViewMode.SIDE_SCROLLER : ViewMode.TOP_DOWN;
@@ -207,8 +251,36 @@ public class DualViewScreen implements Screen {
         }
     }
 
+    private void handleIsometricToggle() {
+        if (Gdx.input.isKeyPressed(Input.Keys.I)) {
+            if (!keyIPressed) {
+                if (viewMode == ViewMode.ISOMETRIC) {
+                    viewMode = lastNonIsometricMode;
+                    if (options.allowSplitView) {
+                        splitViewEnabled = splitViewBeforeIsometric;
+                    }
+                    Gdx.app.log("DualViewScreen", "Isometric view disabled");
+                } else {
+                    lastNonIsometricMode = viewMode;
+                    splitViewBeforeIsometric = splitViewEnabled;
+                    viewMode = ViewMode.ISOMETRIC;
+                    splitViewEnabled = false;
+                    Gdx.app.log("DualViewScreen", "Isometric view enabled");
+                }
+            }
+            keyIPressed = true;
+        } else {
+            keyIPressed = false;
+        }
+    }
+
     private void handleSplitViewToggle() {
         if (!options.allowSplitView) {
+            splitViewEnabled = false;
+            keyMPressed = false;
+            return;
+        }
+        if (viewMode == ViewMode.ISOMETRIC) {
             splitViewEnabled = false;
             keyMPressed = false;
             return;
@@ -225,8 +297,8 @@ public class DualViewScreen implements Screen {
     }
 
     private void handleLayerInput() {
-        boolean topActive = isTopViewActive();
-        boolean sideActive = isSideViewActive();
+    boolean topActive = isTopViewActive();
+    boolean sideActive = isSideViewActive() || viewMode == ViewMode.ISOMETRIC;
 
         if (Gdx.input.isKeyPressed(Input.Keys.COMMA)) {
             if (!keyCommaPressed && topActive) {
@@ -336,6 +408,52 @@ public class DualViewScreen implements Screen {
         clampSideCameraPosition();
     }
 
+    private void handleIsoZoomInput() {
+        if (viewMode != ViewMode.ISOMETRIC) {
+            return;
+        }
+        boolean updated = false;
+        if (Gdx.input.isKeyPressed(Input.Keys.MINUS)) {
+            isoZoom = Math.min(3f, isoZoom + 0.1f);
+            updated = true;
+        }
+        if (Gdx.input.isKeyPressed(Input.Keys.EQUALS)) {
+            isoZoom = Math.max(0.3f, isoZoom - 0.1f);
+            updated = true;
+        }
+        if (updated) {
+            isoCamera.zoom = isoZoom;
+            isoCamera.update();
+        }
+    }
+
+    private void handleIsoCameraPan(float delta) {
+        if (viewMode != ViewMode.ISOMETRIC) {
+            return;
+        }
+        float panSpeed = 300f * delta;
+        float moveX = 0f;
+        float moveY = 0f;
+        if (Gdx.input.isKeyPressed(Input.Keys.A)) {
+            moveX -= panSpeed;
+        }
+        if (Gdx.input.isKeyPressed(Input.Keys.D)) {
+            moveX += panSpeed;
+        }
+        if (Gdx.input.isKeyPressed(Input.Keys.S)) {
+            moveY -= panSpeed;
+        }
+        if (Gdx.input.isKeyPressed(Input.Keys.W)) {
+            moveY += panSpeed;
+        }
+        if (moveX == 0f && moveY == 0f) {
+            return;
+        }
+        isoCamera.position.x += moveX;
+        isoCamera.position.y += moveY;
+        isoCamera.update();
+    }
+
     private void clampSideCameraPosition() {
         float worldWidthPixels = gridWorld.getWidth() * blockSize;
         float worldHeightPixels = totalVerticalBlocks * blockSize;
@@ -391,6 +509,11 @@ public class DualViewScreen implements Screen {
         renderSideScrollerViewContents();
     }
 
+    private void renderIsometricFullView() {
+        applyIsometricViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        renderIsometricViewContents();
+    }
+
     private void renderSideScrollerViewContents() {
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.setProjectionMatrix(sideCamera.combined);
@@ -437,6 +560,32 @@ public class DualViewScreen implements Screen {
         
         renderCubeSideView();
         renderTopLayerGuide();
+    }
+
+    private void renderIsometricViewContents() {
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        sr.setProjectionMatrix(isoCamera.combined);
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        int width = gridWorld.getWidth();
+        int depth = gridWorld.getDepth();
+        int maxZ = gridWorld.getHeight() - 1;
+        int minZ = -undergroundDepth;
+
+        for (int z = minZ; z <= maxZ; z++) {
+            float layerOpacity = z > currentLayer ? 0.25f : 1f;
+            for (int x = 0; x < width; x++) {
+                for (int y = 0; y < depth; y++) {
+                    GridWorld.BlockState block = gridWorld.getBlock(x, y, z);
+                    if (block == GridWorld.BlockState.AIR) {
+                        continue;
+                    }
+                    Color baseColor = getBlockColor(block);
+                    sr.setColor(baseColor.r, baseColor.g, baseColor.b, layerOpacity);
+                    drawIsoTile(sr, x, y, z);
+                }
+            }
+        }
+        sr.end();
     }
 
     private void renderTopLayerGuide() {
@@ -526,6 +675,19 @@ public class DualViewScreen implements Screen {
         sr.rect(0, screenY - 1f, worldWidthPixels, 2f);
         sr.end();
     }
+
+    private void drawIsoTile(ShapeRenderer sr, int x, int y, int z) {
+    float isoX = (y - x) * (isoTileWidth / 2f);
+    float isoY = (x + y) * (isoTileHeight / 2f) + (z * isoBlockHeight);
+        float centerX = isoOriginX + isoX;
+        float centerY = isoOriginY + isoY;
+        float halfW = isoTileWidth / 2f;
+        float halfH = isoTileHeight / 2f;
+
+    // Top diamond (two triangles for isometric tile)
+    sr.triangle(centerX, centerY + halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+    sr.triangle(centerX, centerY - halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+    }
     
     private Color getBlockColor(GridWorld.BlockState block) {
         switch (block) {
@@ -560,7 +722,16 @@ public class DualViewScreen implements Screen {
             ? ""
             : "[" + options.overlayLabel + "] ";
         String info;
-        if (splitViewEnabled) {
+        if (viewMode == ViewMode.ISOMETRIC) {
+            String levelDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
+            StringBuilder builder = new StringBuilder(labelPrefix)
+                .append("Isometric view: ")
+                .append(levelDesc)
+                .append(", side slice Y=")
+                .append(sideViewSlice)
+                .append("  (comma/period layers, '['/']' slices, WASD pan, -/= zoom, 'i' exit)");
+            info = builder.toString();
+        } else if (splitViewEnabled) {
             String topDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
             StringBuilder builder = new StringBuilder(labelPrefix)
                 .append("Split: Top ")
@@ -574,6 +745,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' toggle");
             }
+            builder.append(", 'i' iso view");
             builder.append(')');
             info = builder.toString();
         } else if (viewMode == ViewMode.TOP_DOWN) {
@@ -591,6 +763,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' split");
             }
+            builder.append(", 'i' iso view");
             builder.append(')');
             info = builder.toString();
         } else {
@@ -604,6 +777,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' split");
             }
+            builder.append(", 'i' iso view");
             builder.append(')');
             info = builder.toString();
         }
@@ -648,6 +822,7 @@ public class DualViewScreen implements Screen {
     public void resize(int width, int height) {
         topDownViewport.update(width, height, true);
         sideViewport.update(width, height, false);
+        isoViewport.update(width, height, false);
         clampSideCameraPosition();
     }
 
@@ -662,6 +837,7 @@ public class DualViewScreen implements Screen {
         if (options.allowSplitView) {
             builder.append(" Press 'm' for split view.");
         }
+        builder.append(" Press 'i' for isometric view.");
         Gdx.app.log("DualViewScreen", builder.toString());
     }
 
