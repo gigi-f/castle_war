@@ -25,7 +25,7 @@ public class SimulationConfig {
     }
 
     public float getWorldHeight() {
-        return worldHeightw;
+        return worldHeight;
     }
 
     public void setWorldHeight(float worldHeight) {
