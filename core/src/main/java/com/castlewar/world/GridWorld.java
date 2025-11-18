@@ -22,7 +22,9 @@ public class GridWorld {
     CASTLE_WHITE_FLOOR,
     CASTLE_BLACK_FLOOR,
     CASTLE_WHITE_STAIR,
-    CASTLE_BLACK_STAIR
+    CASTLE_BLACK_STAIR,
+    DOOR,
+    WINDOW
     }
     
     public GridWorld(int width, int depth, int height) {
@@ -87,5 +89,48 @@ public class GridWorld {
     
     public int getHeight() {
         return height;
+    }
+
+    public boolean hasLineOfSight(float x1, float y1, float z1, float x2, float y2, float z2) {
+        // Simple raycasting / stepping
+        float dist = (float)Math.sqrt(Math.pow(x2-x1, 2) + Math.pow(y2-y1, 2) + Math.pow(z2-z1, 2));
+        if (dist < 0.1f) return true;
+        
+        float steps = dist * 2; // 2 checks per block unit for safety
+        float dx = (x2 - x1) / steps;
+        float dy = (y2 - y1) / steps;
+        float dz = (z2 - z1) / steps;
+        
+        float cx = x1;
+        float cy = y1;
+        float cz = z1;
+        
+        for (int i = 0; i < steps; i++) {
+            cx += dx;
+            cy += dy;
+            cz += dz;
+            
+            // Don't check the very end point (target might be IN a block or just on edge)
+            if (i > steps - 2) break;
+            
+            BlockState block = getBlock(Math.round(cx), Math.round(cy), Math.round(cz));
+            if (isOpaque(block)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean isOpaque(BlockState block) {
+        return block != BlockState.AIR && 
+               block != BlockState.CASTLE_WHITE_STAIR && 
+               block != BlockState.CASTLE_BLACK_STAIR &&
+               block != BlockState.WINDOW; // Windows are transparent for LOS
+    }
+    
+    public boolean isSolid(BlockState block) {
+        return block != BlockState.AIR && 
+               block != BlockState.CASTLE_WHITE_STAIR && 
+               block != BlockState.CASTLE_BLACK_STAIR;
     }
 }

@@ -13,12 +13,16 @@ import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
+import java.util.List;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.castlewar.entity.Assassin;
 import com.castlewar.entity.Entity;
+import com.castlewar.entity.Guard;
 import com.castlewar.entity.King;
-import com.castlewar.entity.MovingCube;
 import com.castlewar.entity.Team;
 import com.castlewar.renderer.GridRenderer;
 import com.castlewar.simulation.WorldContext;
@@ -75,7 +79,6 @@ public class DualViewScreen implements Screen {
     private final Matrix4 overlayProjection;
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
-    private final MovingCube movingCube;
     private final Options options;
     
     // Cameras / viewports for each view mode
@@ -121,6 +124,11 @@ public class DualViewScreen implements Screen {
     private int lastMouseX;
     private boolean xRayEnabled = true;
     private boolean keyXPressed;
+    private Entity selectedUnit;
+    private Entity focusedUnit;
+    private boolean keyTabPressed;
+    private boolean keyEnterPressed;
+    private boolean mouseClicked;
 
     public DualViewScreen(WorldContext worldContext, Options options) {
         this.worldContext = worldContext;
@@ -143,7 +151,6 @@ public class DualViewScreen implements Screen {
         this.overlayProjection = new Matrix4();
         this.undergroundDepth = worldContext.getUndergroundDepth();
         this.totalVerticalBlocks = worldContext.getTotalVerticalBlocks();
-        this.movingCube = worldContext.getMovingCube();
         this.isoTileWidth = blockSize;
         this.isoTileHeight = blockSize * 0.5f;
         this.isoBlockHeight = blockSize * 0.6f;
@@ -262,6 +269,8 @@ public class DualViewScreen implements Screen {
         
         handleIsoRotationInput();
         handleXRayToggle();
+        handleUnitSelection();
+        handleAccessibilityInput();
     }
     
     private void handleViewToggle() {
@@ -528,6 +537,135 @@ public class DualViewScreen implements Screen {
         }
     }
 
+    private void handleAccessibilityInput() {
+        // TAB to cycle focus
+        if (Gdx.input.isKeyJustPressed(Input.Keys.TAB)) {
+            List<Entity> entities = worldContext.getEntities();
+            if (!entities.isEmpty()) {
+                int currentIndex = -1;
+                if (focusedUnit != null) {
+                    currentIndex = entities.indexOf(focusedUnit);
+                }
+                
+                int nextIndex = (currentIndex + 1) % entities.size();
+                focusedUnit = entities.get(nextIndex);
+                String unitName = "Entity";
+                if (focusedUnit instanceof King) unitName = ((King)focusedUnit).getName();
+                else if (focusedUnit instanceof Guard) unitName = ((Guard)focusedUnit).getName();
+                else if (focusedUnit instanceof Assassin) unitName = ((Assassin)focusedUnit).getName();
+                Gdx.app.log("DualViewScreen", "Focused: " + unitName);
+            }
+        }
+        
+        // ENTER to select focused unit
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+            if (focusedUnit != null) {
+                selectedUnit = focusedUnit;
+                String unitName = "Entity";
+                if (selectedUnit instanceof King) unitName = ((King)selectedUnit).getName();
+                else if (selectedUnit instanceof Guard) unitName = ((Guard)selectedUnit).getName();
+                else if (selectedUnit instanceof Assassin) unitName = ((Assassin)selectedUnit).getName();
+                Gdx.app.log("DualViewScreen", "Selected via Keyboard: " + unitName);
+            }
+        }
+    }
+
+    private void handleUnitSelection() {
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            int mouseX = Gdx.input.getX();
+            int mouseY = Gdx.input.getY();
+            
+            // Check for unit clicks based on current view
+            Entity clicked = null;
+            
+            if (viewMode == ViewMode.ISOMETRIC) {
+                clicked = getUnitAtIso(mouseX, mouseY);
+            } else if (splitViewEnabled) {
+                // Check top viewport
+                if (mouseX <= Gdx.graphics.getWidth() * splitViewRatio) {
+                    clicked = getUnitAtTopDown(mouseX, mouseY, topDownViewport);
+                } else {
+                    clicked = getUnitAtSide(mouseX, mouseY, sideViewport);
+                }
+            } else if (viewMode == ViewMode.TOP_DOWN) {
+                clicked = getUnitAtTopDown(mouseX, mouseY, topDownViewport);
+            } else {
+                clicked = getUnitAtSide(mouseX, mouseY, sideViewport);
+            }
+            
+            if (clicked != null) {
+                selectedUnit = clicked;
+                String unitName = "Entity";
+                if (clicked instanceof King) unitName = ((King)clicked).getName();
+                else if (clicked instanceof Guard) unitName = ((Guard)clicked).getName();
+                else if (clicked instanceof Assassin) unitName = ((Assassin)clicked).getName();
+                Gdx.app.log("DualViewScreen", "Selected: " + unitName);
+            } else {
+                // Deselect if clicking empty space (optional, maybe keep selection?)
+                // selectedUnit = null; 
+            }
+        }
+    }
+
+    private Entity getUnitAtTopDown(int screenX, int screenY, Viewport viewport) {
+        Vector3 worldCoords = viewport.unproject(new Vector3(screenX, screenY, 0));
+        float wx = worldCoords.x / blockSize;
+        float wy = worldCoords.y / blockSize;
+        
+        for (Entity entity : worldContext.getEntities()) {
+            // Check if visible first
+            boolean visible = xRayEnabled || ((int) entity.getZ() <= currentLayer && entity.getZ() >= 0);
+            if (!visible) continue;
+
+            if (Math.abs(entity.getX() - wx) < 0.5f && Math.abs(entity.getY() - wy) < 0.5f) {
+                return entity;
+            }
+        }
+        return null;
+    }
+
+    private Entity getUnitAtSide(int screenX, int screenY, Viewport viewport) {
+        Vector3 worldCoords = viewport.unproject(new Vector3(screenX, screenY, 0));
+        float wx = worldCoords.x / blockSize;
+        float wz = (worldCoords.y / blockSize) - undergroundDepth;
+        
+        for (Entity entity : worldContext.getEntities()) {
+             // Check visibility
+            if (!xRayEnabled && Math.round(entity.getY()) != sideViewSlice) continue;
+            
+            if (Math.abs(entity.getX() - wx) < 0.5f && Math.abs(entity.getZ() - wz) < 0.5f) {
+                return entity;
+            }
+        }
+        return null;
+    }
+
+    private Entity getUnitAtIso(int screenX, int screenY) {
+        // Simple screen-space distance check against projected positions
+        float centerX = gridWorld.getWidth() / 2f;
+        float centerY = gridWorld.getDepth() / 2f;
+        
+        float minDist = 40f; // Pixel threshold
+        Entity bestMatch = null;
+        
+        for (Entity entity : worldContext.getEntities()) {
+             // Check visibility (iso shows everything usually, maybe layer filter?)
+             boolean visible = xRayEnabled || ((int) entity.getZ() <= currentLayer && entity.getZ() >= 0);
+             if (!visible) continue;
+
+            float[] screenPos = projectIsoPoint(entity.getX() + 0.5f, entity.getY() + 0.5f, entity.getZ(), centerX, centerY);
+            // projectIsoPoint returns world coords relative to isoOrigin, need to project to screen
+            Vector3 projected = isoCamera.project(new Vector3(screenPos[0], screenPos[1], 0));
+            
+            float dist = Vector2.dst(screenX, Gdx.graphics.getHeight() - screenY, projected.x, projected.y);
+            if (dist < minDist) {
+                minDist = dist;
+                bestMatch = entity;
+            }
+        }
+        return bestMatch;
+    }
+
     private void clampSideCameraPosition() {
         float worldWidthPixels = gridWorld.getWidth() * blockSize;
         float worldHeightPixels = totalVerticalBlocks * blockSize;
@@ -568,11 +706,6 @@ public class DualViewScreen implements Screen {
         for (int z = startLayer; z <= currentLayer; z++) {
             float opacity = (z == currentLayer) ? 1.0f : 0.5f; // Desaturate lower layers
             renderLayer(z, opacity);
-        }
-        
-        // Render cube if it's on or below the current layer and above ground
-        if ((int) movingCube.getZ() <= currentLayer && movingCube.getZ() >= 0) {
-            renderCubeTopDown();
         }
         
         // Render entities
@@ -640,8 +773,6 @@ public class DualViewScreen implements Screen {
         }
         sr.end();
         
-        renderCubeSideView();
-        
         // Render entities
         for (Entity entity : worldContext.getEntities()) {
             renderEntitySide(entity);
@@ -684,13 +815,6 @@ public class DualViewScreen implements Screen {
                     sr.setColor(r, g, b, layerOpacity);
                     drawIsoTile(sr, x, y, z, block);
                 }
-            }
-        }
-        if (movingCube != null) {
-            float cubeZ = movingCube.getZ();
-            if (cubeZ >= minZ && cubeZ <= maxZ) {
-                sr.setColor(Color.RED);
-                drawIsoCubeMarker(sr, movingCube.getX(), movingCube.getY(), cubeZ);
             }
         }
         
@@ -846,26 +970,7 @@ public class DualViewScreen implements Screen {
         return new float[] { isoOriginX + isoX, isoOriginY + isoY };
     }
 
-    private void drawIsoCubeMarker(ShapeRenderer sr, float x, float y, float z) {
-        float centerX = gridWorld.getWidth() / 2f;
-        float centerY = gridWorld.getDepth() / 2f;
-        float bodyHeight = isoBlockHeight * 0.4f;
-        
-        // Top face corners
-        float[] t1 = projectIsoPoint(x, y, z, centerX, centerY);
-        float[] t2 = projectIsoPoint(x + 1, y, z, centerX, centerY);
-        float[] t3 = projectIsoPoint(x + 1, y + 1, z, centerX, centerY);
-        float[] t4 = projectIsoPoint(x, y + 1, z, centerX, centerY);
-        
-        // Draw top diamond
-        sr.triangle(t1[0], t1[1], t2[0], t2[1], t3[0], t3[1]);
-        sr.triangle(t1[0], t1[1], t3[0], t3[1], t4[0], t4[1]);
-        
-        // Draw front face (approximate for marker)
-        // We'll just draw a vertical line down from the bottom corner of the diamond
-        // to give it some volume feeling, or just the top diamond is enough for a marker.
-        // Let's keep it simple as a flat marker for now to avoid complex occlusion logic.
-    }
+
     
     private Color getBlockColor(GridWorld.BlockState block) {
         switch (block) {
@@ -1008,6 +1113,148 @@ public class DualViewScreen implements Screen {
         
         // Reset scale
         overlayFont.getData().setScale(1f);
+        
+        if (selectedUnit != null) {
+            renderUnitModal(screenWidth, screenHeight, scale);
+        }
+    }
+
+    private void renderUnitModal(float screenWidth, float screenHeight, float scale) {
+        float modalWidth = 300f * scale;
+        float modalHeight = 150f * scale;
+        float modalX = 20f * scale;
+        float modalY = screenHeight - modalHeight - 20f * scale;
+        
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        overlayProjection.setToOrtho2D(0, 0, screenWidth, screenHeight);
+        sr.setProjectionMatrix(overlayProjection);
+        
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        
+        // Background Bubble
+        drawBubble(sr, modalX, modalY, modalWidth, modalHeight, new Color(0.1f, 0.1f, 0.15f, 0.9f));
+        
+        // Headshot Background
+        float headshotSize = 80f * scale;
+        float headshotX = modalX + 20f * scale;
+        float headshotY = modalY + (modalHeight - headshotSize) / 2f;
+        sr.setColor(0.2f, 0.2f, 0.25f, 1f);
+        sr.rect(headshotX, headshotY, headshotSize, headshotSize);
+        
+        // Procedural Headshot (Pixel Art Style)
+        if (selectedUnit instanceof King) {
+            King king = (King) selectedUnit;
+            boolean isWhite = king.getTeam() == Team.WHITE;
+            
+            // Face
+            sr.setColor(0.9f, 0.8f, 0.7f, 1f); // Skin
+            sr.rect(headshotX + headshotSize*0.2f, headshotY + headshotSize*0.2f, headshotSize*0.6f, headshotSize*0.6f);
+            
+            // Beard
+            sr.setColor(isWhite ? Color.WHITE : Color.BLACK);
+            sr.rect(headshotX + headshotSize*0.2f, headshotY + headshotSize*0.2f, headshotSize*0.6f, headshotSize*0.3f);
+            
+            // Crown
+            sr.setColor(isWhite ? Color.GOLD : new Color(0.4f, 0.4f, 0.4f, 1f));
+            sr.rect(headshotX + headshotSize*0.2f, headshotY + headshotSize*0.7f, headshotSize*0.6f, headshotSize*0.2f);
+            // Crown spikes
+            sr.triangle(
+                headshotX + headshotSize*0.2f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.3f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.25f, headshotY + headshotSize*1.0f
+            );
+             sr.triangle(
+                headshotX + headshotSize*0.45f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.55f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.5f, headshotY + headshotSize*1.0f
+            );
+             sr.triangle(
+                headshotX + headshotSize*0.7f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.8f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.75f, headshotY + headshotSize*1.0f
+            );
+            
+            sr.rect(headshotX + headshotSize*0.35f, headshotY + headshotSize*0.55f, headshotSize*0.1f, headshotSize*0.1f);
+            sr.rect(headshotX + headshotSize*0.55f, headshotY + headshotSize*0.55f, headshotSize*0.1f, headshotSize*0.1f);
+        } else if (selectedUnit instanceof Assassin) {
+            Assassin assassin = (Assassin) selectedUnit;
+            boolean isWhite = assassin.getTeam() == Team.WHITE;
+            
+            // Hood (Dark Team Color)
+            sr.setColor(isWhite ? new Color(0.8f, 0.8f, 0.9f, 1f) : new Color(0.2f, 0.1f, 0.1f, 1f));
+            // Hood shape
+            sr.triangle(
+                headshotX + headshotSize*0.5f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.2f, headshotY + headshotSize*0.2f,
+                headshotX + headshotSize*0.8f, headshotY + headshotSize*0.2f
+            );
+            sr.rect(headshotX + headshotSize*0.2f, headshotY + headshotSize*0.2f, headshotSize*0.6f, headshotSize*0.4f);
+            
+            // Face (Shadowed)
+            sr.setColor(0.1f, 0.1f, 0.1f, 1f);
+            sr.rect(headshotX + headshotSize*0.3f, headshotY + headshotSize*0.3f, headshotSize*0.4f, headshotSize*0.3f);
+            
+            // Eyes (Glowing Red)
+            sr.setColor(1f, 0f, 0f, 1f);
+            sr.rect(headshotX + headshotSize*0.35f, headshotY + headshotSize*0.45f, headshotSize*0.1f, headshotSize*0.05f);
+            sr.rect(headshotX + headshotSize*0.55f, headshotY + headshotSize*0.45f, headshotSize*0.1f, headshotSize*0.05f);
+        }
+        else if (selectedUnit instanceof Guard) {
+            Guard guard = (Guard) selectedUnit;
+            boolean isWhite = guard.getTeam() == Team.WHITE;
+            
+            // Helmet (Gray/Silver)
+            sr.setColor(0.6f, 0.6f, 0.65f, 1f);
+            sr.rect(headshotX + headshotSize*0.2f, headshotY + headshotSize*0.2f, headshotSize*0.6f, headshotSize*0.7f);
+            
+            // Visor slit
+            sr.setColor(0.1f, 0.1f, 0.1f, 1f);
+            sr.rect(headshotX + headshotSize*0.3f, headshotY + headshotSize*0.6f, headshotSize*0.4f, headshotSize*0.1f);
+            
+            // Plume (Team Color)
+            sr.setColor(isWhite ? Color.CYAN : Color.RED); // Distinguish plume
+            sr.triangle(
+                headshotX + headshotSize*0.5f, headshotY + headshotSize*0.9f,
+                headshotX + headshotSize*0.3f, headshotY + headshotSize*1.0f,
+                headshotX + headshotSize*0.7f, headshotY + headshotSize*1.0f
+            );
+        }
+        
+        sr.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+        
+        // Text Stats
+        overlayBatch.setProjectionMatrix(overlayProjection);
+        overlayBatch.begin();
+        overlayFont.getData().setScale(scale * 0.8f); // Slightly smaller for stats
+        
+        float textX = headshotX + headshotSize + 20f * scale;
+        float textY = modalY + modalHeight - 30f * scale;
+        float lineHeight = 25f * scale;
+        
+        if (selectedUnit instanceof King) {
+            King king = (King) selectedUnit;
+            overlayFont.draw(overlayBatch, king.getName(), textX, textY);
+            overlayFont.draw(overlayBatch, "HP: " + (int)king.getHp() + "/" + (int)king.getMaxHp(), textX, textY - lineHeight);
+            overlayFont.draw(overlayBatch, "Team: " + king.getTeam(), textX, textY - lineHeight * 2);
+        } else if (selectedUnit instanceof Guard) {
+            Guard guard = (Guard) selectedUnit;
+            overlayFont.draw(overlayBatch, guard.getName(), textX, textY);
+            overlayFont.draw(overlayBatch, "HP: " + (int)guard.getHp() + "/" + (int)guard.getMaxHp(), textX, textY - lineHeight);
+            overlayFont.draw(overlayBatch, "Type: " + guard.getType(), textX, textY - lineHeight * 2);
+        } else if (selectedUnit instanceof Assassin) {
+            Assassin assassin = (Assassin) selectedUnit;
+            overlayFont.draw(overlayBatch, assassin.getName(), textX, textY);
+            overlayFont.draw(overlayBatch, "HP: " + (int)assassin.getHp() + "/" + (int)assassin.getMaxHp(), textX, textY - lineHeight);
+            overlayFont.draw(overlayBatch, "Role: Assassin", textX, textY - lineHeight * 2);
+        } else {
+            overlayFont.draw(overlayBatch, "Unknown Unit", textX, textY);
+        }
+        
+        overlayBatch.end();
+        overlayFont.getData().setScale(1f); // Reset
     }
 
     private void drawBubble(ShapeRenderer sr, float x, float y, float width, float height, Color color) {
@@ -1156,38 +1403,6 @@ public class DualViewScreen implements Screen {
         return 0f;
     }
     
-    private void renderCubeTopDown() {
-        // Draw cube in top view
-        float cubeScreenX = movingCube.getX() * blockSize;
-        float cubeScreenY = movingCube.getY() * blockSize;
-        float cubeSize = blockSize * 0.8f;
-        
-        ShapeRenderer sr = gridRenderer.getShapeRenderer();
-        sr.begin(ShapeRenderer.ShapeType.Filled);
-        sr.setColor(Color.RED);
-        sr.rect(cubeScreenX, cubeScreenY, cubeSize, cubeSize);
-        sr.end();
-    }
-
-    private void renderCubeSideView() {
-        if (Math.round(movingCube.getY()) != sideViewSlice) {
-            return;
-        }
-        float cubeZ = movingCube.getZ();
-        if (cubeZ < -undergroundDepth || cubeZ >= gridWorld.getHeight()) {
-            return;
-        }
-        float cubeScreenX = movingCube.getX() * blockSize;
-        float cubeScreenZ = (cubeZ + undergroundDepth) * blockSize;
-        float cubeSize = blockSize * 0.8f;
-        
-        ShapeRenderer sr = gridRenderer.getShapeRenderer();
-        sr.begin(ShapeRenderer.ShapeType.Filled);
-        sr.setColor(Color.RED);
-        sr.rect(cubeScreenX, cubeScreenZ, cubeSize, cubeSize);
-        sr.end();
-    }
-
     private void renderEntityTopDown(Entity entity) {
         float screenX = entity.getX() * blockSize;
         float screenY = entity.getY() * blockSize;
@@ -1196,6 +1411,18 @@ public class DualViewScreen implements Screen {
 
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.begin(ShapeRenderer.ShapeType.Filled);
+        
+        // Draw focus outline if applicable
+        if (entity == focusedUnit) {
+            sr.setColor(Color.CYAN);
+            float outlineSize = size + 4f;
+            float outlineOffset = (blockSize - outlineSize) / 2f;
+            if (entity instanceof King) {
+                sr.rect(screenX + outlineOffset, screenY + outlineOffset, outlineSize, outlineSize);
+            } else {
+                sr.circle(screenX + blockSize/2, screenY + blockSize/2, outlineSize/2);
+            }
+        }
         
         if (entity instanceof King) {
             // Draw King icon (Chess piece style)
@@ -1221,6 +1448,37 @@ public class DualViewScreen implements Screen {
                 screenX + offset + size * 0.7f, screenY + offset + size * 0.85f,
                 2f
             );
+        } else if (entity instanceof Guard) {
+            // Guard icon (Shield)
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.LIGHT_GRAY : Color.DARK_GRAY;
+            sr.setColor(teamColor);
+            
+            // Shield shape
+            sr.rect(screenX + offset + size*0.2f, screenY + offset + size*0.4f, size*0.6f, size*0.5f);
+            sr.triangle(
+                screenX + offset + size*0.2f, screenY + offset + size*0.4f,
+                screenX + offset + size*0.8f, screenY + offset + size*0.4f,
+                screenX + offset + size*0.5f, screenY + offset + size*0.1f
+            );
+            
+            // Inner detail
+            sr.setColor(entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK);
+            sr.rect(screenX + offset + size*0.4f, screenY + offset + size*0.3f, size*0.2f, size*0.4f);
+        } else if (entity instanceof Assassin) {
+            // Assassin icon (Dagger/Triangle)
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
+            sr.setColor(teamColor);
+            
+            // Dagger blade
+            sr.triangle(
+                screenX + offset + size*0.5f, screenY + offset + size*0.9f,
+                screenX + offset + size*0.3f, screenY + offset + size*0.4f,
+                screenX + offset + size*0.7f, screenY + offset + size*0.4f
+            );
+            // Handle
+            sr.setColor(Color.BROWN);
+            sr.rect(screenX + offset + size*0.45f, screenY + offset + size*0.1f, size*0.1f, size*0.3f);
+            sr.rect(screenX + offset + size*0.3f, screenY + offset + size*0.3f, size*0.4f, size*0.1f);
         } else {
             // Generic entity
             sr.setColor(Color.MAGENTA);
@@ -1246,6 +1504,23 @@ public class DualViewScreen implements Screen {
             float by = base[1];
             float scale = isoTileWidth * 0.8f;
             
+            // Draw focus outline
+            if (entity == focusedUnit) {
+                sr.setColor(Color.CYAN);
+                // Draw a diamond outline on the ground
+                float[] t1 = projectIsoPoint(x, y, z, centerX, centerY);
+                float[] t2 = projectIsoPoint(x + 1, y, z, centerX, centerY);
+                float[] t3 = projectIsoPoint(x + 1, y + 1, z, centerX, centerY);
+                float[] t4 = projectIsoPoint(x, y + 1, z, centerX, centerY);
+                
+                // Draw slightly larger diamond or just thick lines
+                float margin = 2f;
+                sr.rectLine(t1[0], t1[1]-margin, t2[0], t2[1]-margin, 2f);
+                sr.rectLine(t2[0], t2[1]-margin, t3[0], t3[1]-margin, 2f);
+                sr.rectLine(t3[0], t3[1]-margin, t4[0], t4[1]-margin, 2f);
+                sr.rectLine(t4[0], t4[1]-margin, t1[0], t1[1]-margin, 2f);
+            }
+            
             // Draw simple 3D-ish King
             // Base
             sr.rect(bx - scale*0.3f, by, scale*0.6f, scale*0.1f);
@@ -1258,6 +1533,86 @@ public class DualViewScreen implements Screen {
             // Cross
             sr.rectLine(bx, by + scale*0.5f, bx, by + scale*0.9f, 2f);
             sr.rectLine(bx - scale*0.15f, by + scale*0.75f, bx + scale*0.15f, by + scale*0.75f, 2f);
+        } else if (entity instanceof Guard) {
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.LIGHT_GRAY : Color.DARK_GRAY;
+            sr.setColor(teamColor);
+            
+            float x = entity.getX();
+            float y = entity.getY();
+            float z = entity.getZ();
+            float centerX = gridWorld.getWidth() / 2f;
+            float centerY = gridWorld.getDepth() / 2f;
+            
+            // Project base position
+            float[] base = projectIsoPoint(x + 0.5f, y + 0.5f, z, centerX, centerY);
+            float bx = base[0];
+            float by = base[1];
+            float scale = isoTileWidth * 0.8f;
+            
+            // Draw focus outline
+            if (entity == focusedUnit) {
+                sr.setColor(Color.CYAN);
+                float[] t1 = projectIsoPoint(x, y, z, centerX, centerY);
+                float[] t2 = projectIsoPoint(x + 1, y, z, centerX, centerY);
+                float[] t3 = projectIsoPoint(x + 1, y + 1, z, centerX, centerY);
+                float[] t4 = projectIsoPoint(x, y + 1, z, centerX, centerY);
+                float margin = 2f;
+                sr.rectLine(t1[0], t1[1]-margin, t2[0], t2[1]-margin, 2f);
+                sr.rectLine(t2[0], t2[1]-margin, t3[0], t3[1]-margin, 2f);
+                sr.rectLine(t3[0], t3[1]-margin, t4[0], t4[1]-margin, 2f);
+                sr.rectLine(t4[0], t4[1]-margin, t1[0], t1[1]-margin, 2f);
+            }
+            
+            // Draw Guard (Blocky with helmet)
+            // Body
+            sr.rect(bx - scale*0.25f, by, scale*0.5f, scale*0.5f);
+            // Helmet
+            sr.setColor(0.6f, 0.6f, 0.65f, 1f);
+            sr.rect(bx - scale*0.2f, by + scale*0.5f, scale*0.4f, scale*0.3f);
+        } else if (entity instanceof Assassin) {
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
+            sr.setColor(teamColor);
+            
+            float x = entity.getX();
+            float y = entity.getY();
+            float z = entity.getZ();
+            float centerX = gridWorld.getWidth() / 2f;
+            float centerY = gridWorld.getDepth() / 2f;
+            
+            // Project base position
+            float[] base = projectIsoPoint(x + 0.5f, y + 0.5f, z, centerX, centerY);
+            float bx = base[0];
+            float by = base[1];
+            float scale = isoTileWidth * 0.8f;
+            
+            // Draw focus outline
+            if (entity == focusedUnit) {
+                sr.setColor(Color.CYAN);
+                float[] t1 = projectIsoPoint(x, y, z, centerX, centerY);
+                float[] t2 = projectIsoPoint(x + 1, y, z, centerX, centerY);
+                float[] t3 = projectIsoPoint(x + 1, y + 1, z, centerX, centerY);
+                float[] t4 = projectIsoPoint(x, y + 1, z, centerX, centerY);
+                float margin = 2f;
+                sr.rectLine(t1[0], t1[1]-margin, t2[0], t2[1]-margin, 2f);
+                sr.rectLine(t2[0], t2[1]-margin, t3[0], t3[1]-margin, 2f);
+                sr.rectLine(t3[0], t3[1]-margin, t4[0], t4[1]-margin, 2f);
+                sr.rectLine(t4[0], t4[1]-margin, t1[0], t1[1]-margin, 2f);
+            }
+            
+            // Draw Assassin (Hooded, crouching)
+            // Body (Lower)
+            sr.triangle(
+                bx - scale*0.3f, by,
+                bx + scale*0.3f, by,
+                bx, by + scale*0.5f
+            );
+            // Hood/Head
+            sr.setColor(teamColor);
+            sr.triangle(
+                bx - scale*0.2f, by + scale*0.4f,
+                bx + scale*0.2f, by + scale*0.4f,
+                bx, by + scale*0.8f
+            );
         }
     }
 
@@ -1277,29 +1632,39 @@ public class DualViewScreen implements Screen {
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.begin(ShapeRenderer.ShapeType.Filled);
         
+        // Draw focus outline
+        if (entity == focusedUnit) {
+            sr.setColor(Color.CYAN);
+            sr.rect(screenX - 2, screenZ - 2, size + 4, size + 4);
+        }
+        
         if (entity instanceof King) {
             // Draw King icon (Side view profile)
             Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
             sr.setColor(teamColor);
-            
-            // Base
-            sr.rect(screenX + offset, screenZ + offset, size, size * 0.2f);
-            // Body
+            sr.rect(screenX + offset, screenZ + offset, size, size);
+            // Crown
+            sr.setColor(Color.GOLD);
+            sr.rect(screenX + offset, screenZ + offset + size*0.8f, size, size*0.2f);
+        } else if (entity instanceof Guard) {
+            // Draw Guard icon (Side view)
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.LIGHT_GRAY : Color.DARK_GRAY;
+            sr.setColor(teamColor);
+            sr.rect(screenX + offset, screenZ + offset, size, size);
+            // Helmet visor
+            sr.setColor(Color.BLACK);
+            sr.rect(screenX + offset + size*0.6f, screenZ + offset + size*0.6f, size*0.4f, size*0.1f);
+        } else if (entity instanceof Assassin) {
+            // Draw Assassin icon (Side view - Crouching)
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
+            sr.setColor(teamColor);
+            // Low body
+            sr.rect(screenX + offset, screenZ + offset, size, size*0.6f);
+            // Hood
             sr.triangle(
-                screenX + offset + size * 0.2f, screenZ + offset + size * 0.2f,
-                screenX + offset + size * 0.8f, screenZ + offset + size * 0.2f,
-                screenX + offset + size * 0.5f, screenZ + offset + size * 0.8f
-            );
-            // Cross
-            sr.rectLine(
-                screenX + offset + size * 0.5f, screenZ + offset + size * 0.7f,
-                screenX + offset + size * 0.5f, screenZ + offset + size,
-                2f
-            );
-            sr.rectLine(
-                screenX + offset + size * 0.3f, screenZ + offset + size * 0.85f,
-                screenX + offset + size * 0.7f, screenZ + offset + size * 0.85f,
-                2f
+                screenX + offset, screenZ + offset + size*0.6f,
+                screenX + offset + size, screenZ + offset + size*0.6f,
+                screenX + offset + size*0.5f, screenZ + offset + size
             );
         } else {
             sr.setColor(Color.MAGENTA);

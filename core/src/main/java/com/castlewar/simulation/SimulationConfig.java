@@ -5,14 +5,14 @@ package com.castlewar.simulation;
  * All values are expressed in block units.
  */
 public class SimulationConfig {
-    private int worldWidth = 80;
-    private int worldDepth = 48;
-    private int worldHeight = 32;
+    private int worldWidth = 200;
+    private int worldDepth = 120;
+    private int worldHeight = 64;
 
-    private int castleWidth = 30;
-    private int castleDepth = 20;
-    private int castleLevels = 6;
-    private int castleRearMargin = 100;
+    private int castleWidth = 60;
+    private int castleDepth = 40;
+    private int castleLevels = 8;
+    private int castleRearMargin = 20;
 
     public int getWorldWidth() {
         return worldWidth;

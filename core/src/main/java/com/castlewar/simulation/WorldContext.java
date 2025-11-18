@@ -1,9 +1,10 @@
 package com.castlewar.simulation;
 
 import com.badlogic.gdx.math.MathUtils;
+import com.castlewar.entity.Assassin;
 import com.castlewar.entity.Entity;
+import com.castlewar.entity.Guard;
 import com.castlewar.entity.King;
-import com.castlewar.entity.MovingCube;
 import com.castlewar.entity.Team;
 import com.castlewar.world.GridWorld;
 import java.util.ArrayList;
@@ -54,7 +55,6 @@ public class WorldContext {
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
 
-    private final MovingCube movingCube;
     private final List<Entity> entities;
 
     private float leftCastleGateX;
@@ -77,16 +77,6 @@ public class WorldContext {
         this.totalVerticalBlocks = gridWorld.getHeight() + undergroundDepth;
 
         buildCastles();
-
-        float cubeZ = 0f;
-        this.movingCube = new MovingCube(
-            leftCastleGateX,
-            leftCastleGateY,
-            cubeZ,
-            8f,
-            leftCastleGateX,
-            rightCastleGateX
-        );
     }
 
     private CastleLayout[] createCastleLayouts() {
@@ -155,13 +145,11 @@ public class WorldContext {
         return totalVerticalBlocks;
     }
 
-    public MovingCube getMovingCube() {
-        return movingCube;
-    }
-
     public void update(float delta) {
-        movingCube.update(delta);
         for (Entity entity : entities) {
+            if (entity instanceof Assassin) {
+                ((Assassin) entity).checkForGuards(entities, gridWorld);
+            }
             entity.update(delta, gridWorld);
         }
     }
@@ -232,6 +220,38 @@ public class WorldContext {
         if (battlefieldEndX <= battlefieldStartX) {
             battlefieldEndX = Math.min(worldWidth, battlefieldStartX + Math.max(1, minBattlefieldWidth));
         }
+        
+        // Spawn Assassins
+        for (Team team : Team.values()) {
+            float startX = (team == Team.WHITE) ? leftStartX : rightStartX;
+            float startY = (team == Team.WHITE) ? leftStartY : rightStartY;
+            CastleLayout layout = (team == Team.WHITE) ? leftLayout : rightLayout;
+            if (layout == null) continue;
+
+            float assassinX = (team == Team.WHITE) ? battlefieldStartX + 5 : battlefieldEndX - 5;
+            float assassinY = startY + layout.height / 2f;
+            float assassinZ = 0; // Ground level
+            Assassin assassin = new Assassin(assassinX, assassinY, assassinZ, team);
+            entities.add(assassin);
+        }
+        
+        // Set Assassin targets
+        King whiteKing = null;
+        King blackKing = null;
+        for (Entity e : entities) {
+            if (e instanceof King) {
+                if (e.getTeam() == Team.WHITE) whiteKing = (King)e;
+                else blackKing = (King)e;
+            }
+        }
+        
+        for (Entity e : entities) {
+            if (e instanceof Assassin) {
+                Assassin a = (Assassin)e;
+                if (a.getTeam() == Team.WHITE) a.setTargetKing(blackKing);
+                else a.setTargetKing(whiteKing);
+            }
+        }
     }
 
     private void buildMultiLevelCastle(CastleLayout layout, int startX, int startY) {
@@ -244,11 +264,17 @@ public class WorldContext {
 
         for (int level = 1; level <= layout.roofLevel; level++) {
             if (level <= layout.interiorLevels) {
-                buildCastleLevel(layout, startX, startY, level, floorType);
-                carveCourtyardLayer(layout, startX, startY, level, false);
-                maintainCentralCorridors(layout, startX, startY, level, floorType);
-                if (level <= layout.roomFloors) {
-                    buildFloorRooms(layout, startX, startY, level, floorType);
+                // Grand Hall logic: Build floor only every 3 levels (1, 4, 7...)
+                boolean isFloorLevel = (level - 1) % 3 == 0;
+                
+                buildCastleLevel(layout, startX, startY, level, floorType, isFloorLevel);
+                
+                if (isFloorLevel) {
+                    carveCourtyardLayer(layout, startX, startY, level, false);
+                    maintainCentralCorridors(layout, startX, startY, level, floorType);
+                    if (level <= layout.roomFloors) {
+                        buildFloorRooms(layout, startX, startY, level, floorType);
+                    }
                 }
             } else if (level == layout.battlementLevel) {
                 buildBattlements(layout, startX, startY, level, floorType);
@@ -285,39 +311,61 @@ public class WorldContext {
         for (int x = startX; x < startX + width; x++) {
             gridWorld.setBlock(x, startY, 0, wallType);
             gridWorld.setBlock(x, startY + height - 1, 0, wallType);
+            // Add windows
+            if ((x - startX) % 4 == 2) {
+                gridWorld.setBlock(x, startY, 2, GridWorld.BlockState.WINDOW);
+                gridWorld.setBlock(x, startY + height - 1, 2, GridWorld.BlockState.WINDOW);
+            }
         }
         for (int y = startY; y < startY + height; y++) {
             gridWorld.setBlock(startX, y, 0, wallType);
             gridWorld.setBlock(startX + width - 1, y, 0, wallType);
+            // Add windows
+            if ((y - startY) % 4 == 2) {
+                gridWorld.setBlock(startX, y, 2, GridWorld.BlockState.WINDOW);
+                gridWorld.setBlock(startX + width - 1, y, 2, GridWorld.BlockState.WINDOW);
+            }
         }
 
         fillInteriorWithFloor(startX, startY, width, height, 0, floorType);
 
         int gateY = startY + height / 2;
         if (layout.gateOnRight) {
-            gridWorld.setBlock(startX + width - 1, gateY, 0, GridWorld.BlockState.AIR);
+            gridWorld.setBlock(startX + width - 1, gateY, 0, GridWorld.BlockState.DOOR);
             gridWorld.setBlock(startX + width, gateY, 0, GridWorld.BlockState.DIRT);
         } else {
-            gridWorld.setBlock(startX, gateY, 0, GridWorld.BlockState.AIR);
+            gridWorld.setBlock(startX, gateY, 0, GridWorld.BlockState.DOOR);
             gridWorld.setBlock(startX - 1, gateY, 0, GridWorld.BlockState.DIRT);
         }
     }
 
     private void buildCastleLevel(CastleLayout layout, int startX, int startY, int z,
-                                  GridWorld.BlockState floorType) {
+                                  GridWorld.BlockState floorType, boolean buildFloor) {
         int width = layout.width;
         int height = layout.height;
         GridWorld.BlockState wallType = layout.wallType;
         for (int x = startX; x < startX + width; x++) {
             gridWorld.setBlock(x, startY, z, wallType);
             gridWorld.setBlock(x, startY + height - 1, z, wallType);
+            // Windows on upper floors
+            if ((x - startX) % 4 == 2) {
+                gridWorld.setBlock(x, startY, z, GridWorld.BlockState.WINDOW);
+                gridWorld.setBlock(x, startY + height - 1, z, GridWorld.BlockState.WINDOW);
+            }
         }
         for (int y = startY; y < startY + height; y++) {
             gridWorld.setBlock(startX, y, z, wallType);
             gridWorld.setBlock(startX + width - 1, y, z, wallType);
+            // Windows on upper floors
+            if ((y - startY) % 4 == 2) {
+                gridWorld.setBlock(startX, y, z, GridWorld.BlockState.WINDOW);
+                gridWorld.setBlock(startX + width - 1, y, z, GridWorld.BlockState.WINDOW);
+            }
         }
 
-        fillInteriorWithFloor(startX, startY, width, height, z, floorType);
+        if (buildFloor) {
+            fillInteriorWithFloor(startX, startY, width, height, z, floorType);
+        }
     }
 
     private void buildBattlements(CastleLayout layout, int startX, int startY, int z,
@@ -540,8 +588,29 @@ public class WorldContext {
         int spawnX = centerX + 2; 
         int spawnY = centerY + 2;
         int spawnZ = 1; // First floor
-        
-        King king = new King(spawnX, spawnY, spawnZ, team);
-        entities.add(king);
+                King king = new King(spawnX, spawnY, spawnZ, team);
+            entities.add(king);
+            
+            // Spawn Entourage Guards
+            for (int i = 0; i < 2; i++) {
+                float gx = spawnX + (i == 0 ? 1 : -1);
+                float gy = spawnY + (i == 0 ? 1 : -1);
+                Guard guard = new Guard(gx, gy, spawnZ, team, Guard.GuardType.ENTOURAGE);
+                guard.setTargetToFollow(king);
+                entities.add(guard);
+            }
+            
+            // Spawn Patrol Guards
+            for (int i = 0; i < 2; i++) {
+                float px = startX + layout.width / 2f + MathUtils.random(-2, 2);
+                float py = startY + layout.height / 2f + MathUtils.random(-2, 2);
+                float pz = layout.battlementLevel; // Patrol battlements initially
+                Guard guard = new Guard(px, py, pz, team, Guard.GuardType.PATROL);
+                entities.add(guard);
+            }
+            
+            // Add gates
+            // ... (Gate logic if any)
+            
     }
 }

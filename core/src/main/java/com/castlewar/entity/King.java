@@ -64,9 +64,10 @@ public class King extends Unit {
         int newY = currentY + dy;
         int newZ = currentZ;
 
-        // Check if valid move
-        if (isValidMove(world, newX, newY, newZ)) {
-            targetPosition = new Vector3(newX, newY, newZ);
+        // Check if valid move (including hop)
+        Vector3 target = getValidMoveTarget(world, newX, newY, newZ);
+        if (target != null) {
+            targetPosition = target;
         } else {
             // Try changing floors if on stairs
             GridWorld.BlockState currentBlock = world.getBlock(currentX, currentY, currentZ);
@@ -78,37 +79,5 @@ public class King extends Unit {
                 }
             }
         }
-    }
-
-    private boolean isValidMove(GridWorld world, int x, int y, int z) {
-        // Must be within bounds
-        if (x < 0 || x >= world.getWidth() || y < 0 || y >= world.getDepth() || z < 0 || z >= world.getHeight()) {
-            return false;
-        }
-
-        GridWorld.BlockState targetBlock = world.getBlock(x, y, z);
-        GridWorld.BlockState belowBlock = world.getBlock(x, y, z - 1);
-
-        // Must be standing on something solid (or be in a stair block)
-        boolean solidFooting = belowBlock != GridWorld.BlockState.AIR || isStair(targetBlock);
-        
-        // Must be moving into AIR or a Stair (not a wall)
-        boolean openSpace = targetBlock == GridWorld.BlockState.AIR || isStair(targetBlock) || isFloor(targetBlock);
-
-        // Special case: Don't walk off the castle (check for floor type matching team)
-        // This is a simple check, can be improved.
-        boolean isTeamTerritory = true; // TODO: Check floor type matches team color
-
-        return solidFooting && openSpace && isTeamTerritory;
-    }
-
-    private boolean isStair(GridWorld.BlockState block) {
-        return block == GridWorld.BlockState.CASTLE_WHITE_STAIR || 
-               block == GridWorld.BlockState.CASTLE_BLACK_STAIR;
-    }
-    
-    private boolean isFloor(GridWorld.BlockState block) {
-         return block == GridWorld.BlockState.CASTLE_WHITE_FLOOR ||
-                block == GridWorld.BlockState.CASTLE_BLACK_FLOOR;
     }
 }
