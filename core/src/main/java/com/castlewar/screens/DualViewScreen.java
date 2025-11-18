@@ -19,10 +19,12 @@ import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import java.util.List;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.castlewar.entity.Assassin;
 import com.castlewar.entity.Entity;
 import com.castlewar.entity.Guard;
 import com.castlewar.entity.King;
+import com.castlewar.entity.Player;
 import com.castlewar.entity.Team;
 import com.castlewar.renderer.GridRenderer;
 import com.castlewar.simulation.WorldContext;
@@ -35,7 +37,8 @@ public class DualViewScreen implements Screen {
     public enum ViewMode {
         TOP_DOWN,
         SIDE_SCROLLER,
-        ISOMETRIC
+        ISOMETRIC,
+        FIRST_PERSON
     }
 
     public static class Options {
@@ -88,6 +91,8 @@ public class DualViewScreen implements Screen {
     private Viewport sideViewport;
     private OrthographicCamera isoCamera;
     private Viewport isoViewport;
+    private PerspectiveCamera fpsCamera;
+    private Player player;
     private final float sideCameraPanSpeed = 200f; // pixels per second
     private static final float SIDE_VIEW_MIN_ZOOM = 0.5f;
     private static final float SIDE_VIEW_MAX_ZOOM = 3.0f;
@@ -178,9 +183,15 @@ public class DualViewScreen implements Screen {
         float isoWorldHeight = (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileHeight / 2f)
             + gridWorld.getHeight() * isoBlockHeight + blockSize * 8f;
         isoCamera = new OrthographicCamera();
-        isoViewport = new FitViewport(isoWorldWidth, isoWorldHeight, isoCamera);
-        isoCamera.position.set(isoWorldWidth / 2f, isoWorldHeight / 2f, 0f);
-        isoCamera.update();
+        isoViewport = new FitViewport(100 * isoZoom, 100 * isoZoom * (Gdx.graphics.getHeight() / (float)Gdx.graphics.getWidth()), isoCamera);
+        isoViewport.update(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        isoCamera.position.set(0, 0, 0);
+        
+        // FPS Camera
+        fpsCamera = new PerspectiveCamera(67, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        fpsCamera.near = 0.1f;
+        fpsCamera.far = 300f;
+        fpsCamera.up.set(0, 0, 1); // Z is up
         isoOriginX = isoWorldWidth / 2f;
         isoOriginY = gridWorld.getHeight() * isoBlockHeight
             + (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileHeight / 4f);
@@ -250,17 +261,39 @@ public class DualViewScreen implements Screen {
         Gdx.gl.glClearColor(0.9f, 0.9f, 0.9f, 1);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-        if (viewMode == ViewMode.ISOMETRIC) {
-            renderIsometricFullView();
-        } else if (splitViewEnabled) {
-            renderSplitViews();
-        } else if (viewMode == ViewMode.TOP_DOWN) {
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
+            if (viewMode == ViewMode.FIRST_PERSON) {
+                viewMode = ViewMode.TOP_DOWN; // Exit FPS
+                Gdx.input.setCursorCatched(false);
+            } else {
+                viewMode = ViewMode.FIRST_PERSON;
+                Gdx.input.setCursorCatched(true);
+                // Spawn player if needed
+                if (player == null) {
+                    float startX = gridWorld.getWidth() / 2f;
+                    float startY = gridWorld.getDepth() / 2f;
+                    float startZ = gridWorld.getHeight() + 5; // Drop from sky
+                    player = new Player(startX, startY, startZ, Team.WHITE, fpsCamera);
+                    worldContext.getEntities().add(player);
+                }
+            }
+        }
+
+        if (viewMode == ViewMode.TOP_DOWN) {
             renderTopDownFullView();
-        } else {
+        } else if (viewMode == ViewMode.SIDE_SCROLLER) {
             renderSideScrollerFullView();
+        } else if (viewMode == ViewMode.ISOMETRIC) {
+            renderIsometricFullView();
+        } else if (viewMode == ViewMode.FIRST_PERSON) {
+            if (player != null) {
+                player.update(Gdx.graphics.getDeltaTime(), gridWorld);
+            }
+            renderFirstPerson();
+        } else if (splitViewEnabled) { // This case handles split view if not in a specific full-screen mode
+            renderSplitViews();
         }
         
-        // Display view info overlay/logging
         // Display view info overlay/logging
         renderOverlay();
         
@@ -1671,6 +1704,52 @@ public class DualViewScreen implements Screen {
             sr.circle(screenX + blockSize/2, screenZ + blockSize/2, size/2);
         }
         sr.end();
+    }
+
+    private void renderFirstPerson() {
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT);
+        
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        sr.setProjectionMatrix(fpsCamera.combined);
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        
+        // Draw visible blocks around player
+        int range = 40;
+        int px = (int)fpsCamera.position.x;
+        int py = (int)fpsCamera.position.y;
+        int pz = (int)fpsCamera.position.z;
+        
+        int minX = Math.max(0, px - range);
+        int maxX = Math.min(gridWorld.getWidth(), px + range);
+        int minY = Math.max(0, py - range);
+        int maxY = Math.min(gridWorld.getDepth(), py + range);
+        int minZ = Math.max(0, pz - range);
+        int maxZ = Math.min(gridWorld.getHeight(), pz + range);
+        
+        for (int x = minX; x < maxX; x++) {
+            for (int y = minY; y < maxY; y++) {
+                for (int z = minZ; z < maxZ; z++) {
+                    GridWorld.BlockState block = gridWorld.getBlock(x, y, z);
+                    if (block != GridWorld.BlockState.AIR) {
+                        Color color = gridRenderer.getBlockColor(block);
+                        sr.setColor(color);
+                        // Draw box (x, y, z is corner)
+                        sr.box(x, y, z, 1, 1, 1);
+                    }
+                }
+            }
+        }
+        
+        // Draw entities
+        for (Entity entity : worldContext.getEntities()) {
+            if (entity == player) continue;
+            sr.setColor(entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK);
+            sr.box(entity.getX(), entity.getY(), entity.getZ(), 0.6f, 0.6f, 1.8f);
+        }
+        
+        sr.end();
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
     }
 
     @Override

@@ -67,40 +67,37 @@ public class GridRenderer {
         shapeRenderer.end();
     }
     
-    private void setBlockColor(BlockState block) {
+    public Color getBlockColor(BlockState block) {
         switch (block) {
             case GRASS:
-                shapeRenderer.setColor(0.3f, 0.7f, 0.2f, 1);
-                break;
+                return new Color(0.3f, 0.7f, 0.2f, 1);
             case DIRT:
-                shapeRenderer.setColor(0.6f, 0.4f, 0.2f, 1);
-                break;
+                return new Color(0.6f, 0.4f, 0.2f, 1);
             case STONE:
-                // Using stone as water/moat - blue color
-                shapeRenderer.setColor(0.2f, 0.4f, 0.8f, 1);
-                break;
+                return new Color(0.2f, 0.4f, 0.8f, 1); // Water/Moat
             case CASTLE_WHITE:
-                shapeRenderer.setColor(0.95f, 0.95f, 0.95f, 1);
-                break;
+                return new Color(0.95f, 0.95f, 0.95f, 1);
             case CASTLE_BLACK:
-                shapeRenderer.setColor(0.15f, 0.15f, 0.15f, 1);
-                break;
+                return new Color(0.15f, 0.15f, 0.15f, 1);
             case CASTLE_WHITE_FLOOR:
-                shapeRenderer.setColor(0.85f, 0.85f, 0.78f, 1);
-                break;
+                return new Color(0.85f, 0.85f, 0.78f, 1);
             case CASTLE_BLACK_FLOOR:
-                shapeRenderer.setColor(0.25f, 0.25f, 0.25f, 1);
-                break;
+                return new Color(0.25f, 0.25f, 0.25f, 1);
             case CASTLE_WHITE_STAIR:
-                shapeRenderer.setColor(0.98f, 0.78f, 0.35f, 1);
-                break;
+                return new Color(0.98f, 0.78f, 0.35f, 1);
             case CASTLE_BLACK_STAIR:
-                shapeRenderer.setColor(0.65f, 0.4f, 0.2f, 1);
-                break;
+                return new Color(0.65f, 0.4f, 0.2f, 1);
+            case DOOR:
+                return new Color(0.4f, 0.25f, 0.1f, 1);
+            case WINDOW:
+                return new Color(0.6f, 0.8f, 1.0f, 0.6f);
             default:
-                shapeRenderer.setColor(Color.WHITE);
-                break;
+                return Color.WHITE;
         }
+    }
+
+    private void setBlockColor(BlockState block) {
+        shapeRenderer.setColor(getBlockColor(block));
     }
     
     public ShapeRenderer getShapeRenderer() {
