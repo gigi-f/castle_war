@@ -1,8 +1,13 @@
 package com.castlewar.simulation;
 
 import com.badlogic.gdx.math.MathUtils;
+import com.castlewar.entity.Entity;
+import com.castlewar.entity.King;
 import com.castlewar.entity.MovingCube;
+import com.castlewar.entity.Team;
 import com.castlewar.world.GridWorld;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Shared simulation context so multiple windows can render the same world state.
@@ -50,6 +55,7 @@ public class WorldContext {
     private final float totalVerticalBlocks;
 
     private final MovingCube movingCube;
+    private final List<Entity> entities;
 
     private float leftCastleGateX;
     private float leftCastleGateY;
@@ -65,6 +71,7 @@ public class WorldContext {
             (int) config.getWorldDepth(),
             (int) config.getWorldHeight()
         );
+        this.entities = new ArrayList<>();
         this.castleLayouts = createCastleLayouts();
         this.undergroundDepth = gridWorld.getHeight();
         this.totalVerticalBlocks = gridWorld.getHeight() + undergroundDepth;
@@ -154,6 +161,13 @@ public class WorldContext {
 
     public void update(float delta) {
         movingCube.update(delta);
+        for (Entity entity : entities) {
+            entity.update(delta, gridWorld);
+        }
+    }
+
+    public List<Entity> getEntities() {
+        return entities;
     }
 
     private void buildCastles() {
@@ -190,6 +204,8 @@ public class WorldContext {
         }
 
         buildMultiLevelCastle(leftLayout, leftStartX, leftStartY);
+        spawnKing(leftLayout, leftStartX, leftStartY, Team.WHITE);
+        
         leftCastleGateX = leftLayout.gateOnRight
             ? leftStartX + leftLayout.width - 1
             : leftStartX;
@@ -198,6 +214,8 @@ public class WorldContext {
 
         if (rightLayout != null && rightStartX >= 0) {
             buildMultiLevelCastle(rightLayout, rightStartX, rightStartY);
+            spawnKing(rightLayout, rightStartX, rightStartY, Team.BLACK);
+            
             rightCastleGateX = rightLayout.gateOnRight
                 ? rightStartX + rightLayout.width - 1
                 : rightStartX;
@@ -512,5 +530,18 @@ public class WorldContext {
         return wallType == GridWorld.BlockState.CASTLE_WHITE
             ? GridWorld.BlockState.CASTLE_WHITE_STAIR
             : GridWorld.BlockState.CASTLE_BLACK_STAIR;
+    }
+
+    private void spawnKing(CastleLayout layout, int startX, int startY, Team team) {
+        // Spawn king in the center of the first floor room
+        int centerX = startX + layout.width / 2;
+        int centerY = startY + layout.height / 2;
+        // Offset slightly to be in a room, not the corridor wall
+        int spawnX = centerX + 2; 
+        int spawnY = centerY + 2;
+        int spawnZ = 1; // First floor
+        
+        King king = new King(spawnX, spawnY, spawnZ, team);
+        entities.add(king);
     }
 }

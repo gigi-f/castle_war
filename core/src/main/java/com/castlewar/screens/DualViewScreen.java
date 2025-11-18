@@ -7,13 +7,19 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.badlogic.gdx.utils.viewport.Viewport;
+import com.castlewar.entity.Entity;
+import com.castlewar.entity.King;
 import com.castlewar.entity.MovingCube;
+import com.castlewar.entity.Team;
 import com.castlewar.renderer.GridRenderer;
 import com.castlewar.simulation.WorldContext;
 import com.castlewar.world.GridWorld;
@@ -65,6 +71,7 @@ public class DualViewScreen implements Screen {
     private final GridRenderer gridRenderer;
     private final SpriteBatch overlayBatch;
     private final BitmapFont overlayFont;
+    private final GlyphLayout glyphLayout;
     private final Matrix4 overlayProjection;
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
@@ -112,6 +119,8 @@ public class DualViewScreen implements Screen {
     private boolean keyCPressed;
     private float isoRotationDegrees = 0f;
     private int lastMouseX;
+    private boolean xRayEnabled = true;
+    private boolean keyXPressed;
 
     public DualViewScreen(WorldContext worldContext, Options options) {
         this.worldContext = worldContext;
@@ -119,9 +128,19 @@ public class DualViewScreen implements Screen {
         this.gridWorld = worldContext.getGridWorld();
         this.gridRenderer = new GridRenderer(blockSize);
         this.overlayBatch = new SpriteBatch();
-        this.overlayFont = new BitmapFont();
-        this.overlayFont.setColor(Color.WHITE);
-    this.overlayProjection = new Matrix4();
+        
+        // Generate high-res font
+        FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("AovelSansRounded-rdDL.ttf"));
+        FreeTypeFontGenerator.FreeTypeFontParameter parameter = new FreeTypeFontGenerator.FreeTypeFontParameter();
+        parameter.size = 20; // Large base size for crisp text
+        parameter.color = Color.WHITE;
+        parameter.minFilter = com.badlogic.gdx.graphics.Texture.TextureFilter.Linear;
+        parameter.magFilter = com.badlogic.gdx.graphics.Texture.TextureFilter.Linear;
+        this.overlayFont = generator.generateFont(parameter);
+        generator.dispose();
+        
+        this.glyphLayout = new GlyphLayout();
+        this.overlayProjection = new Matrix4();
         this.undergroundDepth = worldContext.getUndergroundDepth();
         this.totalVerticalBlocks = worldContext.getTotalVerticalBlocks();
         this.movingCube = worldContext.getMovingCube();
@@ -238,7 +257,11 @@ public class DualViewScreen implements Screen {
         // Display view info overlay/logging
         renderOverlay();
         
+        // Display view info overlay/logging
+        renderOverlay();
+        
         handleIsoRotationInput();
+        handleXRayToggle();
     }
     
     private void handleViewToggle() {
@@ -493,6 +516,18 @@ public class DualViewScreen implements Screen {
         }
     }
 
+    private void handleXRayToggle() {
+        if (Gdx.input.isKeyPressed(Input.Keys.X)) {
+            if (!keyXPressed) {
+                xRayEnabled = !xRayEnabled;
+                Gdx.app.log("DualViewScreen", xRayEnabled ? "X-Ray Mode ON" : "X-Ray Mode OFF");
+            }
+            keyXPressed = true;
+        } else {
+            keyXPressed = false;
+        }
+    }
+
     private void clampSideCameraPosition() {
         float worldWidthPixels = gridWorld.getWidth() * blockSize;
         float worldHeightPixels = totalVerticalBlocks * blockSize;
@@ -538,6 +573,14 @@ public class DualViewScreen implements Screen {
         // Render cube if it's on or below the current layer and above ground
         if ((int) movingCube.getZ() <= currentLayer && movingCube.getZ() >= 0) {
             renderCubeTopDown();
+        }
+        
+        // Render entities
+        for (Entity entity : worldContext.getEntities()) {
+            boolean visible = xRayEnabled || ((int) entity.getZ() <= currentLayer && entity.getZ() >= 0);
+            if (visible) {
+                renderEntityTopDown(entity);
+            }
         }
 
         renderSideSliceGuide();
@@ -598,6 +641,12 @@ public class DualViewScreen implements Screen {
         sr.end();
         
         renderCubeSideView();
+        
+        // Render entities
+        for (Entity entity : worldContext.getEntities()) {
+            renderEntitySide(entity);
+        }
+
         renderTopLayerGuide();
     }
 
@@ -644,6 +693,15 @@ public class DualViewScreen implements Screen {
                 drawIsoCubeMarker(sr, movingCube.getX(), movingCube.getY(), cubeZ);
             }
         }
+        
+        // Render entities
+        for (Entity entity : worldContext.getEntities()) {
+            float ez = entity.getZ();
+            if (ez >= minZ && ez <= maxZ) {
+                renderEntityIso(sr, entity);
+            }
+        }
+        
         sr.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
     }
@@ -835,16 +893,16 @@ public class DualViewScreen implements Screen {
     }
     
     private void renderOverlay() {
-        // Render a translucent bar for overlay text (placeholder for font rendering)
-        ShapeRenderer sr = gridRenderer.getShapeRenderer();
-        overlayProjection.setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        sr.setProjectionMatrix(overlayProjection);
-        sr.begin(ShapeRenderer.ShapeType.Filled);
-        sr.setColor(0, 0, 0, 0.7f);
-        sr.rect(10, Gdx.graphics.getHeight() - 30, 560, 25);
-        sr.end();
-
-    renderCompassHud();
+        int screenWidth = Gdx.graphics.getWidth();
+        int screenHeight = Gdx.graphics.getHeight();
+        
+        // Reset viewport to full screen to avoid squashed UI in split view
+        Gdx.gl.glViewport(0, 0, screenWidth, screenHeight);
+        
+        // Update projection matrix for overlay
+        overlayProjection.setToOrtho2D(0, 0, screenWidth, screenHeight);
+        
+        renderCompassHud();
         
         String labelPrefix = (options.overlayLabel == null || options.overlayLabel.isEmpty())
             ? ""
@@ -857,7 +915,7 @@ public class DualViewScreen implements Screen {
                 .append(levelDesc)
                 .append(", side slice Y=")
                 .append(sideViewSlice)
-                .append("  (comma/period layers, '['/']' slices, WASD pan, -/= zoom, 'c' compass, 'i' exit)");
+                .append("  (comma/period layers, '['/']' slices, WASD pan, -/= zoom, 'c' compass, 'x' xray, 'i' exit)");
             info = builder.toString();
         } else if (splitViewEnabled) {
             String topDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
@@ -873,7 +931,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' toggle");
             }
-            builder.append(", 'c' compass, 'i' iso view");
+            builder.append(", 'c' compass, 'x' xray, 'i' iso view");
             builder.append(')');
             info = builder.toString();
         } else if (viewMode == ViewMode.TOP_DOWN) {
@@ -891,7 +949,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' split");
             }
-            builder.append(", 'c' compass, 'i' iso view");
+            builder.append(", 'c' compass, 'x' xray, 'i' iso view");
             builder.append(')');
             info = builder.toString();
         } else {
@@ -905,14 +963,73 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' split");
             }
-            builder.append(", 'c' compass, 'i' iso view");
+            builder.append(", 'c' compass, 'x' xray, 'i' iso view");
             builder.append(')');
             info = builder.toString();
         }
-    overlayBatch.setProjectionMatrix(overlayProjection);
-    overlayBatch.begin();
-        overlayFont.draw(overlayBatch, info, 20, Gdx.graphics.getHeight() - 10);
+
+        // HUD Configuration
+        // Base scale on 1080p reference. 
+        // Since base font is 28px, scale=1 at 1080p is good.
+        float scale = Math.max(0.8f, screenHeight / 1080f); 
+        overlayFont.getData().setScale(scale);
+        
+        float padding = 20f * scale;
+        float maxWidth = screenWidth * 0.8f; // Max width 80% of screen
+        
+        // Measure text
+        glyphLayout.setText(overlayFont, info, Color.WHITE, maxWidth, Align.left, true);
+        float textWidth = glyphLayout.width;
+        float textHeight = glyphLayout.height;
+        
+        float bubbleWidth = textWidth + padding * 2;
+        float bubbleHeight = textHeight + padding * 2;
+        
+        // Position bubble at bottom center, slightly up
+        float bubbleX = (screenWidth - bubbleWidth) / 2f;
+        float bubbleY = 20f; // Margin from bottom
+        
+        // Draw Bubble
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        overlayProjection.setToOrtho2D(0, 0, screenWidth, screenHeight);
+        sr.setProjectionMatrix(overlayProjection);
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        drawBubble(sr, bubbleX, bubbleY, bubbleWidth, bubbleHeight, new Color(0.1f, 0.1f, 0.15f, 0.85f));
+        sr.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+        
+        // Draw Text
+        overlayBatch.setProjectionMatrix(overlayProjection);
+        overlayBatch.begin();
+        overlayFont.draw(overlayBatch, glyphLayout, bubbleX + padding, bubbleY + bubbleHeight - padding);
         overlayBatch.end();
+        
+        // Reset scale
+        overlayFont.getData().setScale(1f);
+    }
+
+    private void drawBubble(ShapeRenderer sr, float x, float y, float width, float height, Color color) {
+        sr.setColor(color);
+        float radius = Math.min(width, height) * 0.2f; // 20% rounding
+        
+        // Center rect
+        sr.rect(x + radius, y + radius, width - 2*radius, height - 2*radius);
+        
+        // Side rects
+        sr.rect(x + radius, y, width - 2*radius, radius);
+        sr.rect(x + radius, y + height - radius, width - 2*radius, radius);
+        
+        // Vertical rects
+        sr.rect(x, y + radius, radius, height - 2*radius);
+        sr.rect(x + width - radius, y + radius, radius, height - 2*radius);
+        
+        // Corners
+        sr.arc(x + radius, y + radius, radius, 180f, 90f);
+        sr.arc(x + width - radius, y + radius, radius, 270f, 90f);
+        sr.arc(x + width - radius, y + height - radius, radius, 0f, 90f);
+        sr.arc(x + radius, y + height - radius, radius, 90f, 90f);
     }
 
     private void renderCompassHud() {
@@ -1068,6 +1185,126 @@ public class DualViewScreen implements Screen {
         sr.begin(ShapeRenderer.ShapeType.Filled);
         sr.setColor(Color.RED);
         sr.rect(cubeScreenX, cubeScreenZ, cubeSize, cubeSize);
+        sr.end();
+    }
+
+    private void renderEntityTopDown(Entity entity) {
+        float screenX = entity.getX() * blockSize;
+        float screenY = entity.getY() * blockSize;
+        float size = blockSize * 0.8f;
+        float offset = (blockSize - size) / 2f;
+
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        
+        if (entity instanceof King) {
+            // Draw King icon (Chess piece style)
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
+            sr.setColor(teamColor);
+            
+            // Base
+            sr.rect(screenX + offset, screenY + offset, size, size * 0.2f);
+            // Body
+            sr.triangle(
+                screenX + offset + size * 0.2f, screenY + offset + size * 0.2f,
+                screenX + offset + size * 0.8f, screenY + offset + size * 0.2f,
+                screenX + offset + size * 0.5f, screenY + offset + size * 0.8f
+            );
+            // Cross
+            sr.rectLine(
+                screenX + offset + size * 0.5f, screenY + offset + size * 0.7f,
+                screenX + offset + size * 0.5f, screenY + offset + size,
+                2f
+            );
+            sr.rectLine(
+                screenX + offset + size * 0.3f, screenY + offset + size * 0.85f,
+                screenX + offset + size * 0.7f, screenY + offset + size * 0.85f,
+                2f
+            );
+        } else {
+            // Generic entity
+            sr.setColor(Color.MAGENTA);
+            sr.circle(screenX + blockSize/2, screenY + blockSize/2, size/2);
+        }
+        sr.end();
+    }
+
+    private void renderEntityIso(ShapeRenderer sr, Entity entity) {
+        if (entity instanceof King) {
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : new Color(0.2f, 0.2f, 0.2f, 1f);
+            sr.setColor(teamColor);
+            
+            float x = entity.getX();
+            float y = entity.getY();
+            float z = entity.getZ();
+            float centerX = gridWorld.getWidth() / 2f;
+            float centerY = gridWorld.getDepth() / 2f;
+            
+            // Project base position
+            float[] base = projectIsoPoint(x + 0.5f, y + 0.5f, z, centerX, centerY);
+            float bx = base[0];
+            float by = base[1];
+            float scale = isoTileWidth * 0.8f;
+            
+            // Draw simple 3D-ish King
+            // Base
+            sr.rect(bx - scale*0.3f, by, scale*0.6f, scale*0.1f);
+            // Body
+            sr.triangle(
+                bx - scale*0.2f, by + scale*0.1f,
+                bx + scale*0.2f, by + scale*0.1f,
+                bx, by + scale*0.6f
+            );
+            // Cross
+            sr.rectLine(bx, by + scale*0.5f, bx, by + scale*0.9f, 2f);
+            sr.rectLine(bx - scale*0.15f, by + scale*0.75f, bx + scale*0.15f, by + scale*0.75f, 2f);
+        }
+    }
+
+    private void renderEntitySide(Entity entity) {
+        if (!xRayEnabled && Math.round(entity.getY()) != sideViewSlice) {
+            return;
+        }
+        float z = entity.getZ();
+        if (z < -undergroundDepth || z >= gridWorld.getHeight()) {
+            return;
+        }
+        float screenX = entity.getX() * blockSize;
+        float screenZ = (z + undergroundDepth) * blockSize;
+        float size = blockSize * 0.8f;
+        float offset = (blockSize - size) / 2f;
+
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        
+        if (entity instanceof King) {
+            // Draw King icon (Side view profile)
+            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
+            sr.setColor(teamColor);
+            
+            // Base
+            sr.rect(screenX + offset, screenZ + offset, size, size * 0.2f);
+            // Body
+            sr.triangle(
+                screenX + offset + size * 0.2f, screenZ + offset + size * 0.2f,
+                screenX + offset + size * 0.8f, screenZ + offset + size * 0.2f,
+                screenX + offset + size * 0.5f, screenZ + offset + size * 0.8f
+            );
+            // Cross
+            sr.rectLine(
+                screenX + offset + size * 0.5f, screenZ + offset + size * 0.7f,
+                screenX + offset + size * 0.5f, screenZ + offset + size,
+                2f
+            );
+            sr.rectLine(
+                screenX + offset + size * 0.3f, screenZ + offset + size * 0.85f,
+                screenX + offset + size * 0.7f, screenZ + offset + size * 0.85f,
+                2f
+            );
+        } else {
+            sr.setColor(Color.MAGENTA);
+            sr.circle(screenX + blockSize/2, screenZ + blockSize/2, size/2);
+        }
         sr.end();
     }
 
