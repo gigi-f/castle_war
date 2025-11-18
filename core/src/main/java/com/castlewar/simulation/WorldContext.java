@@ -1,5 +1,6 @@
 package com.castlewar.simulation;
 
+import com.badlogic.gdx.math.MathUtils;
 import com.castlewar.entity.MovingCube;
 import com.castlewar.world.GridWorld;
 
@@ -7,12 +8,49 @@ import com.castlewar.world.GridWorld;
  * Shared simulation context so multiple windows can render the same world state.
  */
 public class WorldContext {
-    private static final int CASTLE_WIDTH = 14;
-    private static final int CASTLE_HEIGHT = 14;
-    private static final int CASTLE_INTERIOR_LEVELS = 6;
-    private static final int CASTLE_BATTLEMENT_LEVEL = CASTLE_INTERIOR_LEVELS + 1;
-    private static final int CASTLE_ROOF_LEVEL = CASTLE_BATTLEMENT_LEVEL + 1;
-    private static final int CASTLE_TURRET_TOP_LEVEL = CASTLE_ROOF_LEVEL + 2;
+    private static final int EDGE_MARGIN = 20;
+    private static final int MIN_BATTLEFIELD_WIDTH = 180;
+
+    private static final class CastleLayout {
+        final int width;
+        final int height;
+        final int interiorLevels;
+        final int battlementLevel;
+        final int roofLevel;
+        final int turretTopLevel;
+        final int roomFloors;
+        final int courtyardMargin;
+        final int stairWidth;
+        final int stairSpacing;
+        final boolean gateOnRight;
+        final GridWorld.BlockState wallType;
+
+        CastleLayout(int width, int height, int interiorLevels, int roomFloors,
+                     int courtyardMargin, int stairWidth, int stairSpacing,
+                     boolean gateOnRight, GridWorld.BlockState wallType) {
+            this.width = width;
+            this.height = height;
+            this.interiorLevels = interiorLevels;
+            this.roomFloors = roomFloors;
+            this.courtyardMargin = courtyardMargin;
+            this.stairWidth = stairWidth;
+            this.stairSpacing = stairSpacing;
+            this.gateOnRight = gateOnRight;
+            this.wallType = wallType;
+            this.battlementLevel = interiorLevels + 1;
+            this.roofLevel = battlementLevel + 1;
+            this.turretTopLevel = roofLevel + 2;
+        }
+    }
+
+    private static final CastleLayout WHITE_CASTLE =
+        new CastleLayout(30, 20, 6, 2, 5, 3, 2, true, GridWorld.BlockState.CASTLE_WHITE);
+    private static final CastleLayout BLACK_CASTLE =
+        new CastleLayout(30, 20, 6, 2, 5, 3, 2, false, GridWorld.BlockState.CASTLE_BLACK);
+
+    protected CastleLayout[] getCastleLayouts() {
+        return new CastleLayout[] { WHITE_CASTLE, BLACK_CASTLE };
+    }
 
     private final SimulationConfig config;
     private final GridWorld gridWorld;
@@ -25,6 +63,8 @@ public class WorldContext {
     private float leftCastleGateY;
     private float rightCastleGateX;
     private float rightCastleGateY;
+    private int battlefieldStartX;
+    private int battlefieldEndX;
 
     public WorldContext(SimulationConfig config) {
         this.config = config;
@@ -74,50 +114,102 @@ public class WorldContext {
     }
 
     private void buildCastles() {
-        int width = gridWorld.getWidth();
+        int worldWidth = gridWorld.getWidth();
         int depth = gridWorld.getDepth();
         int centerY = depth / 2;
-        int castleStartY = centerY - CASTLE_HEIGHT / 2;
-        int horizontalMargin = 10;
+        int horizontalMargin = EDGE_MARGIN;
+
+        CastleLayout[] layouts = getCastleLayouts();
+        if (layouts.length == 0) {
+            return;
+        }
+
+        CastleLayout leftLayout = layouts[0];
+        int leftStartY = centerY - leftLayout.height / 2;
         int leftStartX = horizontalMargin;
-        int rightStartX = width - CASTLE_WIDTH - horizontalMargin;
+        CastleLayout rightLayout = layouts.length > 1 ? layouts[1] : null;
 
-        buildMultiLevelCastle(leftStartX, castleStartY, CASTLE_WIDTH, CASTLE_HEIGHT,
-            GridWorld.BlockState.CASTLE_WHITE, true);
-        leftCastleGateX = leftStartX + CASTLE_WIDTH - 1;
-        leftCastleGateY = castleStartY + CASTLE_HEIGHT / 2f;
+        int rightStartX = -1;
+        int rightStartY = leftStartY;
+        if (rightLayout != null) {
+            rightStartY = centerY - rightLayout.height / 2;
+            rightStartX = worldWidth - rightLayout.width - horizontalMargin;
 
-        buildMultiLevelCastle(rightStartX, castleStartY, CASTLE_WIDTH, CASTLE_HEIGHT,
-            GridWorld.BlockState.CASTLE_BLACK, false);
-        rightCastleGateX = rightStartX;
-        rightCastleGateY = castleStartY + CASTLE_HEIGHT / 2f;
-    }
-
-    private void buildMultiLevelCastle(int startX, int startY, int width, int height,
-                                       GridWorld.BlockState wallType, boolean gateOnRight) {
-        GridWorld.BlockState floorType = getFloorType(wallType);
-
-        buildCastle(startX, startY, width, height, wallType, floorType, gateOnRight);
-
-        for (int level = 1; level <= CASTLE_ROOF_LEVEL; level++) {
-            if (level <= CASTLE_INTERIOR_LEVELS) {
-                buildCastleLevel(startX, startY, width, height, level, wallType, floorType);
-            } else if (level == CASTLE_BATTLEMENT_LEVEL) {
-                buildBattlements(startX, startY, width, height, level, wallType, floorType);
-            } else {
-                buildRoof(startX, startY, width, height, level, wallType, floorType);
+            int battlefieldWidth = rightStartX - (leftStartX + leftLayout.width);
+            if (battlefieldWidth < MIN_BATTLEFIELD_WIDTH) {
+                int shortfall = MIN_BATTLEFIELD_WIDTH - battlefieldWidth;
+                int shiftLeft = Math.min(leftStartX - 1, (shortfall + 1) / 2);
+                leftStartX = Math.max(1, leftStartX - shiftLeft);
+                int shiftRight = shortfall - shiftLeft;
+                rightStartX = Math.min(worldWidth - rightLayout.width - 1, rightStartX + shiftRight);
             }
         }
 
-        buildTurret(startX, startY, wallType);
-        buildTurret(startX + width - 1, startY, wallType);
-        buildTurret(startX, startY + height - 1, wallType);
-        buildTurret(startX + width - 1, startY + height - 1, wallType);
+        buildMultiLevelCastle(leftLayout, leftStartX, leftStartY);
+        leftCastleGateX = leftLayout.gateOnRight
+            ? leftStartX + leftLayout.width - 1
+            : leftStartX;
+        leftCastleGateY = leftStartY + leftLayout.height / 2f;
+        battlefieldStartX = leftStartX + leftLayout.width;
+
+        if (rightLayout != null && rightStartX >= 0) {
+            buildMultiLevelCastle(rightLayout, rightStartX, rightStartY);
+            rightCastleGateX = rightLayout.gateOnRight
+                ? rightStartX + rightLayout.width - 1
+                : rightStartX;
+            rightCastleGateY = rightStartY + rightLayout.height / 2f;
+            battlefieldEndX = rightStartX;
+        } else {
+            rightCastleGateX = leftCastleGateX;
+            rightCastleGateY = leftCastleGateY;
+            battlefieldEndX = worldWidth - horizontalMargin;
+        }
+
+        battlefieldStartX = Math.max(0, battlefieldStartX);
+        battlefieldEndX = Math.min(worldWidth, battlefieldEndX);
+        if (battlefieldEndX <= battlefieldStartX) {
+            battlefieldEndX = Math.min(worldWidth, battlefieldStartX + Math.max(1, MIN_BATTLEFIELD_WIDTH));
+        }
     }
 
-    private void buildCastle(int startX, int startY, int width, int height,
-                             GridWorld.BlockState wallType, GridWorld.BlockState floorType,
-                             boolean gateOnRight) {
+    private void buildMultiLevelCastle(CastleLayout layout, int startX, int startY) {
+        GridWorld.BlockState floorType = getFloorType(layout.wallType);
+        GridWorld.BlockState stairType = getStairType(layout.wallType);
+
+        buildCastle(layout, startX, startY, floorType);
+        carveCourtyardLayer(layout, startX, startY, 0, true);
+        maintainCentralCorridors(layout, startX, startY, 0, floorType);
+
+        for (int level = 1; level <= layout.roofLevel; level++) {
+            if (level <= layout.interiorLevels) {
+                buildCastleLevel(layout, startX, startY, level, floorType);
+                carveCourtyardLayer(layout, startX, startY, level, false);
+                maintainCentralCorridors(layout, startX, startY, level, floorType);
+                if (level <= layout.roomFloors) {
+                    buildFloorRooms(layout, startX, startY, level, floorType);
+                }
+            } else if (level == layout.battlementLevel) {
+                buildBattlements(layout, startX, startY, level, floorType);
+            } else {
+                buildRoof(layout, startX, startY, level, floorType);
+                carveCourtyardLayer(layout, startX, startY, level, false);
+                maintainCentralCorridors(layout, startX, startY, level, floorType);
+            }
+        }
+
+        buildGrandStaircase(layout, startX, startY, stairType);
+
+        buildTurret(startX, startY, layout);
+        buildTurret(startX + layout.width - 1, startY, layout);
+        buildTurret(startX, startY + layout.height - 1, layout);
+        buildTurret(startX + layout.width - 1, startY + layout.height - 1, layout);
+    }
+
+    private void buildCastle(CastleLayout layout, int startX, int startY,
+                             GridWorld.BlockState floorType) {
+        int width = layout.width;
+        int height = layout.height;
+        GridWorld.BlockState wallType = layout.wallType;
         for (int x = startX - 1; x < startX + width + 1; x++) {
             for (int y = startY - 1; y < startY + height + 1; y++) {
                 if (x >= 0 && x < gridWorld.getWidth() && y >= 0 && y < gridWorld.getDepth()) {
@@ -140,7 +232,7 @@ public class WorldContext {
         fillInteriorWithFloor(startX, startY, width, height, 0, floorType);
 
         int gateY = startY + height / 2;
-        if (gateOnRight) {
+        if (layout.gateOnRight) {
             gridWorld.setBlock(startX + width - 1, gateY, 0, GridWorld.BlockState.AIR);
             gridWorld.setBlock(startX + width, gateY, 0, GridWorld.BlockState.DIRT);
         } else {
@@ -149,8 +241,11 @@ public class WorldContext {
         }
     }
 
-    private void buildCastleLevel(int startX, int startY, int width, int height, int z,
-                                  GridWorld.BlockState wallType, GridWorld.BlockState floorType) {
+    private void buildCastleLevel(CastleLayout layout, int startX, int startY, int z,
+                                  GridWorld.BlockState floorType) {
+        int width = layout.width;
+        int height = layout.height;
+        GridWorld.BlockState wallType = layout.wallType;
         for (int x = startX; x < startX + width; x++) {
             gridWorld.setBlock(x, startY, z, wallType);
             gridWorld.setBlock(x, startY + height - 1, z, wallType);
@@ -163,8 +258,11 @@ public class WorldContext {
         fillInteriorWithFloor(startX, startY, width, height, z, floorType);
     }
 
-    private void buildBattlements(int startX, int startY, int width, int height, int z,
-                                  GridWorld.BlockState wallType, GridWorld.BlockState floorType) {
+    private void buildBattlements(CastleLayout layout, int startX, int startY, int z,
+                                  GridWorld.BlockState floorType) {
+        int width = layout.width;
+        int height = layout.height;
+        GridWorld.BlockState wallType = layout.wallType;
         fillInteriorWithFloor(startX, startY, width, height, z, floorType);
 
         for (int x = startX; x < startX + width; x++) {
@@ -181,8 +279,11 @@ public class WorldContext {
         }
     }
 
-    private void buildRoof(int startX, int startY, int width, int height, int z,
-                           GridWorld.BlockState wallType, GridWorld.BlockState floorType) {
+    private void buildRoof(CastleLayout layout, int startX, int startY, int z,
+                           GridWorld.BlockState floorType) {
+        int width = layout.width;
+        int height = layout.height;
+        GridWorld.BlockState wallType = layout.wallType;
         for (int x = startX; x < startX + width; x++) {
             gridWorld.setBlock(x, startY, z, wallType);
             gridWorld.setBlock(x, startY + height - 1, z, wallType);
@@ -204,9 +305,9 @@ public class WorldContext {
         }
     }
 
-    private void buildTurret(int x, int y, GridWorld.BlockState wallType) {
-        for (int z = 1; z <= CASTLE_TURRET_TOP_LEVEL; z++) {
-            gridWorld.setBlock(x, y, z, wallType);
+    private void buildTurret(int x, int y, CastleLayout layout) {
+        for (int z = 1; z <= layout.turretTopLevel; z++) {
+            gridWorld.setBlock(x, y, z, layout.wallType);
         }
     }
 
@@ -219,9 +320,153 @@ public class WorldContext {
         }
     }
 
+    private void carveCourtyardLayer(CastleLayout layout, int startX, int startY, int z, boolean groundLevel) {
+        int width = layout.width;
+        int height = layout.height;
+        int margin = layout.courtyardMargin;
+        int innerMinX = startX + 1;
+        int innerMaxX = startX + width - 2;
+        int innerMinY = startY + 1;
+        int innerMaxY = startY + height - 2;
+        int courtyardMinX = innerMinX + margin;
+        int courtyardMaxX = innerMaxX - margin;
+        int courtyardMinY = innerMinY + margin;
+        int courtyardMaxY = innerMaxY - margin;
+        if (courtyardMinX >= courtyardMaxX || courtyardMinY >= courtyardMaxY) {
+            return;
+        }
+        int corridorX = startX + width / 2;
+        int corridorY = startY + height / 2;
+        GridWorld.BlockState filler = groundLevel ? GridWorld.BlockState.GRASS : GridWorld.BlockState.AIR;
+        for (int x = courtyardMinX; x <= courtyardMaxX; x++) {
+            for (int y = courtyardMinY; y <= courtyardMaxY; y++) {
+                if (Math.abs(x - corridorX) <= 1 || Math.abs(y - corridorY) <= 1) {
+                    continue;
+                }
+                gridWorld.setBlock(x, y, z, filler);
+            }
+        }
+    }
+
+    private void maintainCentralCorridors(CastleLayout layout, int startX, int startY, int z,
+                                           GridWorld.BlockState floorType) {
+        int width = layout.width;
+        int height = layout.height;
+        int corridorX = startX + width / 2;
+        int corridorY = startY + height / 2;
+        for (int x = startX + 1; x < startX + width - 1; x++) {
+            gridWorld.setBlock(x, corridorY, z, floorType);
+        }
+        for (int y = startY + 1; y < startY + height - 1; y++) {
+            gridWorld.setBlock(corridorX, y, z, floorType);
+        }
+    }
+
+    private void buildGrandStaircase(CastleLayout layout, int startX, int startY,
+                                     GridWorld.BlockState stairType) {
+        int gateY = startY + layout.height / 2;
+        int direction = layout.gateOnRight ? -1 : 1;
+        int currentX = layout.gateOnRight ? startX + layout.width - 2 : startX + 1;
+        for (int level = 0; level <= layout.interiorLevels; level++) {
+            placeStairSegment(layout, currentX, gateY, level, stairType);
+            clearStairwellAbove(layout, currentX, gateY, level + 1);
+            currentX += direction * layout.stairSpacing;
+            currentX = MathUtils.clamp(currentX, startX + 1, startX + layout.width - 2);
+        }
+    }
+
+    private void placeStairSegment(CastleLayout layout, int centerX, int gateY, int level,
+                                    GridWorld.BlockState stairType) {
+        int offsetStart = -layout.stairWidth / 2;
+        for (int i = 0; i < layout.stairWidth; i++) {
+            int y = gateY + offsetStart + i;
+            gridWorld.setBlock(centerX, y, level, stairType);
+        }
+    }
+
+    private void clearStairwellAbove(CastleLayout layout, int centerX, int gateY, int startLevel) {
+        int offsetStart = -layout.stairWidth / 2;
+        for (int level = startLevel; level <= layout.roofLevel; level++) {
+            for (int i = 0; i < layout.stairWidth; i++) {
+                int y = gateY + offsetStart + i;
+                gridWorld.setBlock(centerX, y, level, GridWorld.BlockState.AIR);
+            }
+        }
+    }
+
+    private void buildFloorRooms(CastleLayout layout, int startX, int startY, int z,
+                                 GridWorld.BlockState floorType) {
+        int width = layout.width;
+        int height = layout.height;
+        GridWorld.BlockState wallType = layout.wallType;
+        int innerMinX = startX + 2;
+        int innerMaxX = startX + width - 3;
+        int innerMinY = startY + 2;
+        int innerMaxY = startY + height - 3;
+        int corridorX = startX + width / 2;
+        int corridorY = startY + height / 2;
+
+        if (z == 1) {
+            int northMinY = innerMinY;
+            int northMaxY = corridorY - 2;
+            int southMinY = corridorY + 2;
+            int southMaxY = innerMaxY;
+            buildRoomSection(innerMinX, northMinY, innerMaxX, northMaxY, z, wallType,
+                new int[][]{{corridorX, northMaxY}});
+            buildRoomSection(innerMinX, southMinY, innerMaxX, southMaxY, z, wallType,
+                new int[][]{{corridorX, southMinY}});
+        } else if (z == 2) {
+            int westMinX = innerMinX;
+            int westMaxX = corridorX - 2;
+            int eastMinX = corridorX + 2;
+            int eastMaxX = innerMaxX;
+            buildRoomSection(westMinX, innerMinY, westMaxX, innerMaxY, z, wallType,
+                new int[][]{{westMaxX, corridorY}});
+            buildRoomSection(eastMinX, innerMinY, eastMaxX, innerMaxY, z, wallType,
+                new int[][]{{eastMinX, corridorY}});
+        }
+    }
+
+    private void buildRoomSection(int minX, int minY, int maxX, int maxY, int z,
+                                  GridWorld.BlockState wallType, int[][] doorPositions) {
+        if (minX >= maxX || minY >= maxY) {
+            return;
+        }
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                boolean boundary = (x == minX || x == maxX || y == minY || y == maxY);
+                if (!boundary) {
+                    continue;
+                }
+                if (isDoorCoordinate(x, y, doorPositions)) {
+                    continue;
+                }
+                gridWorld.setBlock(x, y, z, wallType);
+            }
+        }
+    }
+
+    private boolean isDoorCoordinate(int x, int y, int[][] doorPositions) {
+        if (doorPositions == null) {
+            return false;
+        }
+        for (int[] door : doorPositions) {
+            if (door != null && door.length == 2 && door[0] == x && door[1] == y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private GridWorld.BlockState getFloorType(GridWorld.BlockState wallType) {
         return wallType == GridWorld.BlockState.CASTLE_WHITE
             ? GridWorld.BlockState.CASTLE_WHITE_FLOOR
             : GridWorld.BlockState.CASTLE_BLACK_FLOOR;
+    }
+
+    private GridWorld.BlockState getStairType(GridWorld.BlockState wallType) {
+        return wallType == GridWorld.BlockState.CASTLE_WHITE
+            ? GridWorld.BlockState.CASTLE_WHITE_STAIR
+            : GridWorld.BlockState.CASTLE_BLACK_STAIR;
     }
 }

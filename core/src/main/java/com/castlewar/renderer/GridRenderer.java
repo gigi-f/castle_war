@@ -91,6 +91,12 @@ public class GridRenderer {
             case CASTLE_BLACK_FLOOR:
                 shapeRenderer.setColor(0.25f, 0.25f, 0.25f, 1);
                 break;
+            case CASTLE_WHITE_STAIR:
+                shapeRenderer.setColor(0.98f, 0.78f, 0.35f, 1);
+                break;
+            case CASTLE_BLACK_STAIR:
+                shapeRenderer.setColor(0.65f, 0.4f, 0.2f, 1);
+                break;
             default:
                 shapeRenderer.setColor(Color.WHITE);
                 break;

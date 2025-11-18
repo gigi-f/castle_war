@@ -597,7 +597,7 @@ public class DualViewScreen implements Screen {
                         b = MathUtils.lerp(gray, b, emphasis);
                     }
                     sr.setColor(r, g, b, layerOpacity);
-                    drawIsoTile(sr, x, y, z);
+                    drawIsoTile(sr, x, y, z, block);
                 }
             }
         }
@@ -700,17 +700,26 @@ public class DualViewScreen implements Screen {
         sr.end();
     }
 
-    private void drawIsoTile(ShapeRenderer sr, int x, int y, int z) {
-    float isoX = (y - x) * (isoTileWidth / 2f);
-    float isoY = (x + y) * (isoTileHeight / 2f) + (z * isoBlockHeight);
+    private void drawIsoTile(ShapeRenderer sr, int x, int y, int z, GridWorld.BlockState block) {
+        float isoX = (y - x) * (isoTileWidth / 2f);
+        float isoY = (x + y) * (isoTileHeight / 2f) + (z * isoBlockHeight);
         float centerX = isoOriginX + isoX;
         float centerY = isoOriginY + isoY;
         float halfW = isoTileWidth / 2f;
         float halfH = isoTileHeight / 2f;
 
-    // Top diamond (two triangles for isometric tile)
-    sr.triangle(centerX, centerY + halfH, centerX - halfW, centerY, centerX + halfW, centerY);
-    sr.triangle(centerX, centerY - halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+        // Top diamond (two triangles for isometric tile)
+        sr.triangle(centerX, centerY + halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+        sr.triangle(centerX, centerY - halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+
+        if (block == GridWorld.BlockState.CASTLE_WHITE_STAIR || block == GridWorld.BlockState.CASTLE_BLACK_STAIR) {
+            float accentHeight = isoBlockHeight * 0.4f;
+            float accentWidth = halfW * 0.6f;
+            sr.rectLine(centerX - accentWidth, centerY - halfH * 0.2f,
+                centerX + accentWidth, centerY - halfH * 0.2f, 1.2f);
+            sr.rect(centerX - accentWidth * 0.2f, centerY - halfH * 0.2f,
+                accentWidth * 0.4f, accentHeight);
+        }
     }
 
     private void drawIsoCubeMarker(ShapeRenderer sr, float x, float y, float z) {
@@ -747,6 +756,10 @@ public class DualViewScreen implements Screen {
                 return new Color(0.85f, 0.85f, 0.78f, 1);
             case CASTLE_BLACK_FLOOR:
                 return new Color(0.25f, 0.25f, 0.25f, 1);
+            case CASTLE_WHITE_STAIR:
+                return new Color(0.98f, 0.78f, 0.35f, 1);
+            case CASTLE_BLACK_STAIR:
+                return new Color(0.65f, 0.4f, 0.2f, 1);
             default:
                 return Color.WHITE;
         }

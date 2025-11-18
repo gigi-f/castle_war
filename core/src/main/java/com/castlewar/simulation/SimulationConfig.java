@@ -4,9 +4,9 @@ package com.castlewar.simulation;
  * Configuration parameters for the simulation world.
  */
 public class SimulationConfig {
-    private float worldWidth = 200f;
-    private float worldDepth = 120f;
-    private float worldHeight = 80f;
+    private float worldWidth = 360f;
+    private float worldDepth = 180f;
+    private float worldHeight = 96f;
 
     public float getWorldWidth() {
         return worldWidth;

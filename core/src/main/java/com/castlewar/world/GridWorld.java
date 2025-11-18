@@ -20,7 +20,9 @@ public class GridWorld {
     CASTLE_WHITE,
     CASTLE_BLACK,
     CASTLE_WHITE_FLOOR,
-    CASTLE_BLACK_FLOOR
+    CASTLE_BLACK_FLOOR,
+    CASTLE_WHITE_STAIR,
+    CASTLE_BLACK_STAIR
     }
     
     public GridWorld(int width, int depth, int height) {

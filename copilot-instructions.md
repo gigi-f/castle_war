@@ -22,7 +22,7 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
   - Side rendering shows the first non-air block along the camera slice, fades distant layers for depth, and overlays a thin blue horizontal guide matching the currently selected top-down layer.
 - **Isometric view** (toggle with `i`)
   - Flipped 180° to mirror the top view and now renders **every** vertical layer simultaneously, keeping the focused layer at full opacity while all others sit at 50%.
-  - Shares the comma/period and bracket controls for layer + slice navigation, adds WASD panning plus `-`/`=` zoom controls while active, and now shows the red moving cube gliding between castles.
+  - Shares the comma/period and bracket controls for layer + slice navigation, adds WASD panning plus `-`/`=` zoom controls while active, renders bright gold/brown stair highlights, and now shows the red moving cube gliding between castles.
 - **Top view cues**
   - The top-down renderer now includes a matching horizontal blue line that marks the Y-slice currently displayed in the side view, keeping both panels synchronized visually.
 - **Moving cube** travels between the two castle gates to demonstrate synchronization between views.
@@ -40,9 +40,12 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
   - `com.castlewar.entity.MovingCube` – minimal entity showcasing animation between castles.
 
 ### World representation
-- Blocks are stored in a fixed array sized by `SimulationConfig` (currently 80×48×32). Negative Z values are synthesized as dirt/stone to represent underground without expanding the array.
-- Block states include: `AIR`, `GRASS`, `DIRT`, `STONE` (moats), `CASTLE_WHITE/BLACK`, and matching `_FLOOR` variants for interior levels.
-- Two castles are procedurally built per run, now doubled to 14×14 footprints with six interior floors, battlements, roofs, and turrets that reach `CASTLE_TURRET_TOP_LEVEL`.
+- Blocks are stored in a fixed array sized by `SimulationConfig` (currently 360×180×96). Negative Z values are synthesized as dirt/stone to represent underground without expanding the array.
+- Block states include: `AIR`, `GRASS`, `DIRT`, `STONE` (moats), `CASTLE_WHITE/BLACK`, matching `_FLOOR` variants for interior levels, plus dedicated `_STAIR` blocks that receive special rendering passes.
+- Two castles are procedurally built per run from `CastleLayout` blueprints (30×20 footprints by default) that enclose a grass courtyard left open to the sky even under the battlements and roof layers. Six interior floors wrap that courtyard, crowned by battlements, roofs, and turrets reaching each layout’s `turretTopLevel`.
+- Castles now spawn against wider map edges, leaving a dedicated battlefield corridor of at least ~180 blocks between their gates. `WorldContext` tracks this gap (`battlefieldStartX / battlefieldEndX`) for future encounters or unit placement.
+- Each keep now mirrors a believable floor plan: a central gate-fed corridor, a terraced courtyard, a diagonal grand stair that climbs from the front gate up to the upper stories, and at least four interior rooms (two on the first floor, two on the second) arranged north/south and east/west so every space is reachable from the main corridor.
+- Castle generation is now blueprint-driven (`WorldContext.getCastleLayouts()`), so future procedural variants can tweak widths, heights, margins, stair geometry, or even inject completely different layouts without touching the rendering code.
 - A moat/bridge surround is carved automatically, and underground depth mirrors sky height to keep layer navigation symmetric.
 
 ### Rendering pipeline
