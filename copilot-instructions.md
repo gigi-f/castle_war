@@ -25,6 +25,8 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
   - Shares the comma/period and bracket controls for layer + slice navigation, adds WASD panning plus `-`/`=` zoom controls while active, renders bright gold/brown stair highlights, and now shows the red moving cube gliding between castles.
 - **Top view cues**
   - The top-down renderer now includes a matching horizontal blue line that marks the Y-slice currently displayed in the side view, keeping both panels synchronized visually.
+- **HUD compass**
+  - A translucent compass rose now lives in the top-right corner of every window to keep cardinal directions obvious. Press `c` at any time to hide or reveal it—this works in split, solo, and isometric views alike.
 - **Moving cube** travels between the two castle gates to demonstrate synchronization between views.
 
 ### Architecture overview

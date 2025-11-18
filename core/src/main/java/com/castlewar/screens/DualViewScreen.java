@@ -108,6 +108,8 @@ public class DualViewScreen implements Screen {
     private boolean keyRightBracketPressed;
     private ViewMode lastNonIsometricMode;
     private boolean splitViewBeforeIsometric;
+    private boolean compassVisible = true;
+    private boolean keyCPressed;
 
     public DualViewScreen(WorldContext worldContext, Options options) {
         this.worldContext = worldContext;
@@ -210,6 +212,7 @@ public class DualViewScreen implements Screen {
         handleSideCameraPan(delta);
         handleIsoZoomInput();
         handleIsoCameraPan(delta);
+    handleCompassToggle();
         
         if (options.updatesSimulation) {
             worldContext.update(delta);
@@ -455,6 +458,18 @@ public class DualViewScreen implements Screen {
         isoCamera.position.x += moveX;
         isoCamera.position.y += moveY;
         isoCamera.update();
+    }
+
+    private void handleCompassToggle() {
+        if (Gdx.input.isKeyPressed(Input.Keys.C)) {
+            if (!keyCPressed) {
+                compassVisible = !compassVisible;
+                Gdx.app.log("DualViewScreen", compassVisible ? "Compass HUD shown" : "Compass HUD hidden");
+            }
+            keyCPressed = true;
+        } else {
+            keyCPressed = false;
+        }
     }
 
     private void clampSideCameraPosition() {
@@ -774,6 +789,8 @@ public class DualViewScreen implements Screen {
         sr.setColor(0, 0, 0, 0.7f);
         sr.rect(10, Gdx.graphics.getHeight() - 30, 560, 25);
         sr.end();
+
+    renderCompassHud();
         
         String labelPrefix = (options.overlayLabel == null || options.overlayLabel.isEmpty())
             ? ""
@@ -786,7 +803,7 @@ public class DualViewScreen implements Screen {
                 .append(levelDesc)
                 .append(", side slice Y=")
                 .append(sideViewSlice)
-                .append("  (comma/period layers, '['/']' slices, WASD pan, -/= zoom, 'i' exit)");
+                .append("  (comma/period layers, '['/']' slices, WASD pan, -/= zoom, 'c' compass, 'i' exit)");
             info = builder.toString();
         } else if (splitViewEnabled) {
             String topDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
@@ -802,7 +819,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' toggle");
             }
-            builder.append(", 'i' iso view");
+            builder.append(", 'c' compass, 'i' iso view");
             builder.append(')');
             info = builder.toString();
         } else if (viewMode == ViewMode.TOP_DOWN) {
@@ -820,7 +837,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' split");
             }
-            builder.append(", 'i' iso view");
+            builder.append(", 'c' compass, 'i' iso view");
             builder.append(')');
             info = builder.toString();
         } else {
@@ -834,7 +851,7 @@ public class DualViewScreen implements Screen {
             if (options.allowSplitView) {
                 builder.append(", 'm' split");
             }
-            builder.append(", 'i' iso view");
+            builder.append(", 'c' compass, 'i' iso view");
             builder.append(')');
             info = builder.toString();
         }
@@ -842,6 +859,87 @@ public class DualViewScreen implements Screen {
     overlayBatch.begin();
         overlayFont.draw(overlayBatch, info, 20, Gdx.graphics.getHeight() - 10);
         overlayBatch.end();
+    }
+
+    private void renderCompassHud() {
+        if (!compassVisible) {
+            return;
+        }
+        float screenWidth = Gdx.graphics.getWidth();
+        float screenHeight = Gdx.graphics.getHeight();
+        float compassSize = 80f;
+        float halfSize = compassSize / 2f;
+        float rightMargin = 25f;
+        float topMargin = 80f;
+        float centerX = screenWidth - rightMargin - halfSize;
+        float centerY = screenHeight - topMargin - halfSize;
+        float rotation = getCompassRotationDegreesClockwise();
+        float sin = MathUtils.sinDeg(rotation);
+        float cos = MathUtils.cosDeg(rotation);
+        float northX = sin;
+        float northY = cos;
+        float eastX = cos;
+        float eastY = -sin;
+
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        sr.setProjectionMatrix(overlayProjection);
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        sr.setColor(0f, 0f, 0f, 0.55f);
+        sr.circle(centerX, centerY, halfSize + 12f, 40);
+        sr.setColor(0.95f, 0.95f, 0.95f, 0.85f);
+        sr.rectLine(
+            centerX - eastX * halfSize,
+            centerY - eastY * halfSize,
+            centerX + eastX * halfSize,
+            centerY + eastY * halfSize,
+            2f);
+        sr.rectLine(
+            centerX - northX * halfSize,
+            centerY - northY * halfSize,
+            centerX + northX * halfSize,
+            centerY + northY * halfSize,
+            2f);
+        sr.setColor(0.95f, 0.3f, 0.3f, 0.9f);
+        float tipLength = halfSize + 8f;
+        float baseOffset = halfSize - 4f;
+        float wingSpread = 6f;
+        float tipX = centerX + northX * tipLength;
+        float tipY = centerY + northY * tipLength;
+        float baseCenterX = centerX + northX * baseOffset;
+        float baseCenterY = centerY + northY * baseOffset;
+        float leftWingX = baseCenterX - eastX * wingSpread;
+        float leftWingY = baseCenterY - eastY * wingSpread;
+        float rightWingX = baseCenterX + eastX * wingSpread;
+        float rightWingY = baseCenterY + eastY * wingSpread;
+        sr.triangle(tipX, tipY, leftWingX, leftWingY, rightWingX, rightWingY);
+        sr.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+
+        overlayBatch.setProjectionMatrix(overlayProjection);
+        overlayBatch.begin();
+        float textOffset = halfSize + 20f;
+        overlayFont.draw(overlayBatch, "N",
+            centerX + northX * textOffset - 4f,
+            centerY + northY * textOffset + 5f);
+        overlayFont.draw(overlayBatch, "S",
+            centerX - northX * textOffset - 4f,
+            centerY - northY * textOffset + 12f);
+        overlayFont.draw(overlayBatch, "E",
+            centerX + eastX * textOffset - 12f,
+            centerY + eastY * textOffset + 5f);
+        overlayFont.draw(overlayBatch, "W",
+            centerX - eastX * textOffset - 6f,
+            centerY - eastY * textOffset + 5f);
+        overlayBatch.end();
+    }
+
+    private float getCompassRotationDegreesClockwise() {
+        if (viewMode == ViewMode.ISOMETRIC) {
+            return 45f;
+        }
+        return 0f;
     }
     
     private void renderCubeTopDown() {
@@ -896,6 +994,7 @@ public class DualViewScreen implements Screen {
             builder.append(" Press 'm' for split view.");
         }
         builder.append(" Press 'i' for isometric view.");
+        builder.append(" Press 'c' to toggle the compass HUD.");
         Gdx.app.log("DualViewScreen", builder.toString());
     }
 
