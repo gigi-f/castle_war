@@ -14,9 +14,6 @@ import com.castlewar.simulation.WorldContext;
 public class DesktopLauncher {
     public static void main(String[] arg) {
         SimulationConfig simConfig = new SimulationConfig();
-        simConfig.setWorldWidth(80);
-        simConfig.setWorldDepth(48);
-        simConfig.setWorldHeight(32);
         WorldContext sharedContext = new WorldContext(simConfig);
 
         Lwjgl3ApplicationConfiguration primaryConfig = new Lwjgl3ApplicationConfiguration();

@@ -43,17 +43,9 @@ public class WorldContext {
         }
     }
 
-    private static final CastleLayout WHITE_CASTLE =
-        new CastleLayout(30, 20, 6, 2, 5, 3, 2, true, GridWorld.BlockState.CASTLE_WHITE);
-    private static final CastleLayout BLACK_CASTLE =
-        new CastleLayout(30, 20, 6, 2, 5, 3, 2, false, GridWorld.BlockState.CASTLE_BLACK);
-
-    protected CastleLayout[] getCastleLayouts() {
-        return new CastleLayout[] { WHITE_CASTLE, BLACK_CASTLE };
-    }
-
     private final SimulationConfig config;
     private final GridWorld gridWorld;
+    private final CastleLayout[] castleLayouts;
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
 
@@ -73,6 +65,7 @@ public class WorldContext {
             (int) config.getWorldDepth(),
             (int) config.getWorldHeight()
         );
+        this.castleLayouts = createCastleLayouts();
         this.undergroundDepth = gridWorld.getHeight();
         this.totalVerticalBlocks = gridWorld.getHeight() + undergroundDepth;
 
@@ -89,8 +82,58 @@ public class WorldContext {
         );
     }
 
+    private CastleLayout[] createCastleLayouts() {
+        int rearMargin = Math.min(config.getCastleRearMargin(), gridWorld.getWidth() / 3);
+        int minBattlefieldWidth = Math.min(MIN_BATTLEFIELD_WIDTH, gridWorld.getWidth() / 4);
+
+        int usableWidth = gridWorld.getWidth() - (rearMargin * 2) - minBattlefieldWidth;
+        int widthLimit = Math.max(12, usableWidth / 2);
+        widthLimit = Math.min(widthLimit, Math.max(12, gridWorld.getWidth() / 2 - rearMargin));
+        int castleWidth = MathUtils.clamp(config.getCastleWidth(), 12, widthLimit);
+
+        int depthLimit = Math.max(12, gridWorld.getDepth() - EDGE_MARGIN * 2 - 2);
+        int castleDepth = MathUtils.clamp(config.getCastleDepth(), 12, depthLimit);
+
+    int levelLimit = Math.max(2, gridWorld.getHeight() - 4);
+    int castleLevels = MathUtils.clamp(config.getCastleLevels(), 2, levelLimit);
+    int roomFloors = Math.min(2, castleLevels);
+
+        int minFootprint = Math.min(castleWidth, castleDepth);
+        int courtyardMargin = MathUtils.clamp(minFootprint / 6, 2, Math.max(2, minFootprint / 3));
+        int stairWidth = MathUtils.clamp(castleDepth / 8, 2, 6);
+        int stairSpacing = MathUtils.clamp(castleWidth / 6, 2, 6);
+
+        CastleLayout left = new CastleLayout(
+            castleWidth,
+            castleDepth,
+            castleLevels,
+            roomFloors,
+            courtyardMargin,
+            stairWidth,
+            stairSpacing,
+            true,
+            GridWorld.BlockState.CASTLE_WHITE
+        );
+        CastleLayout right = new CastleLayout(
+            castleWidth,
+            castleDepth,
+            castleLevels,
+            roomFloors,
+            courtyardMargin,
+            stairWidth,
+            stairSpacing,
+            false,
+            GridWorld.BlockState.CASTLE_BLACK
+        );
+        return new CastleLayout[] { left, right };
+    }
+
     public SimulationConfig getConfig() {
         return config;
+    }
+
+    protected CastleLayout[] getCastleLayouts() {
+        return castleLayouts;
     }
 
     public GridWorld getGridWorld() {
@@ -117,7 +160,8 @@ public class WorldContext {
         int worldWidth = gridWorld.getWidth();
         int depth = gridWorld.getDepth();
         int centerY = depth / 2;
-        int horizontalMargin = EDGE_MARGIN;
+        int horizontalMargin = Math.min(config.getCastleRearMargin(), worldWidth / 3);
+        int minBattlefieldWidth = Math.min(MIN_BATTLEFIELD_WIDTH, worldWidth / 4);
 
         CastleLayout[] layouts = getCastleLayouts();
         if (layouts.length == 0) {
@@ -136,8 +180,8 @@ public class WorldContext {
             rightStartX = worldWidth - rightLayout.width - horizontalMargin;
 
             int battlefieldWidth = rightStartX - (leftStartX + leftLayout.width);
-            if (battlefieldWidth < MIN_BATTLEFIELD_WIDTH) {
-                int shortfall = MIN_BATTLEFIELD_WIDTH - battlefieldWidth;
+            if (battlefieldWidth < minBattlefieldWidth) {
+                int shortfall = minBattlefieldWidth - battlefieldWidth;
                 int shiftLeft = Math.min(leftStartX - 1, (shortfall + 1) / 2);
                 leftStartX = Math.max(1, leftStartX - shiftLeft);
                 int shiftRight = shortfall - shiftLeft;
@@ -168,7 +212,7 @@ public class WorldContext {
         battlefieldStartX = Math.max(0, battlefieldStartX);
         battlefieldEndX = Math.min(worldWidth, battlefieldEndX);
         if (battlefieldEndX <= battlefieldStartX) {
-            battlefieldEndX = Math.min(worldWidth, battlefieldStartX + Math.max(1, MIN_BATTLEFIELD_WIDTH));
+            battlefieldEndX = Math.min(worldWidth, battlefieldStartX + Math.max(1, minBattlefieldWidth));
         }
     }
 

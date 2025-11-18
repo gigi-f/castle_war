@@ -43,9 +43,6 @@ public class CastleWarGame extends Game {
 
     private static WorldContext createDefaultContext() {
         SimulationConfig config = new SimulationConfig();
-        config.setWorldWidth(80);
-        config.setWorldDepth(48);
-        config.setWorldHeight(32);
         return new WorldContext(config);
     }
 }

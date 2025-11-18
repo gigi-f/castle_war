@@ -110,6 +110,8 @@ public class DualViewScreen implements Screen {
     private boolean splitViewBeforeIsometric;
     private boolean compassVisible = true;
     private boolean keyCPressed;
+    private float isoRotationDegrees = 0f;
+    private int lastMouseX;
 
     public DualViewScreen(WorldContext worldContext, Options options) {
         this.worldContext = worldContext;
@@ -233,7 +235,10 @@ public class DualViewScreen implements Screen {
         }
         
         // Display view info overlay/logging
+        // Display view info overlay/logging
         renderOverlay();
+        
+        handleIsoRotationInput();
     }
     
     private void handleViewToggle() {
@@ -458,6 +463,22 @@ public class DualViewScreen implements Screen {
         isoCamera.position.x += moveX;
         isoCamera.position.y += moveY;
         isoCamera.update();
+    }
+
+    private void handleIsoRotationInput() {
+        if (viewMode != ViewMode.ISOMETRIC) {
+            return;
+        }
+        if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
+            int currentMouseX = Gdx.input.getX();
+            if (lastMouseX != 0) { // Skip first frame of press to avoid jump
+                float deltaX = currentMouseX - lastMouseX;
+                isoRotationDegrees -= deltaX * 0.5f; // Adjust sensitivity as needed
+            }
+            lastMouseX = currentMouseX;
+        } else {
+            lastMouseX = 0;
+        }
     }
 
     private void handleCompassToggle() {
@@ -716,43 +737,76 @@ public class DualViewScreen implements Screen {
     }
 
     private void drawIsoTile(ShapeRenderer sr, int x, int y, int z, GridWorld.BlockState block) {
-        float isoX = (y - x) * (isoTileWidth / 2f);
-        float isoY = (x + y) * (isoTileHeight / 2f) + (z * isoBlockHeight);
-        float centerX = isoOriginX + isoX;
-        float centerY = isoOriginY + isoY;
-        float halfW = isoTileWidth / 2f;
-        float halfH = isoTileHeight / 2f;
-
-        // Top diamond (two triangles for isometric tile)
-        sr.triangle(centerX, centerY + halfH, centerX - halfW, centerY, centerX + halfW, centerY);
-        sr.triangle(centerX, centerY - halfH, centerX - halfW, centerY, centerX + halfW, centerY);
+        // Calculate the 4 corners of the tile in world space relative to center
+        float centerX = gridWorld.getWidth() / 2f;
+        float centerY = gridWorld.getDepth() / 2f;
+        
+        // Corners: (x,y), (x+1,y), (x+1,y+1), (x,y+1)
+        float[] c1 = projectIsoPoint(x, y, z, centerX, centerY);
+        float[] c2 = projectIsoPoint(x + 1, y, z, centerX, centerY);
+        float[] c3 = projectIsoPoint(x + 1, y + 1, z, centerX, centerY);
+        float[] c4 = projectIsoPoint(x, y + 1, z, centerX, centerY);
+        
+        // Draw two triangles to form the quad
+        sr.triangle(c1[0], c1[1], c2[0], c2[1], c3[0], c3[1]);
+        sr.triangle(c1[0], c1[1], c3[0], c3[1], c4[0], c4[1]);
 
         if (block == GridWorld.BlockState.CASTLE_WHITE_STAIR || block == GridWorld.BlockState.CASTLE_BLACK_STAIR) {
-            float accentHeight = isoBlockHeight * 0.4f;
-            float accentWidth = halfW * 0.6f;
-            sr.rectLine(centerX - accentWidth, centerY - halfH * 0.2f,
-                centerX + accentWidth, centerY - halfH * 0.2f, 1.2f);
-            sr.rect(centerX - accentWidth * 0.2f, centerY - halfH * 0.2f,
-                accentWidth * 0.4f, accentHeight);
+            // Simplified stair marker for rotated view - just a small centered quad
+            float[] center = projectIsoPoint(x + 0.5f, y + 0.5f, z, centerX, centerY);
+            float size = isoTileWidth * 0.3f;
+            sr.rect(center[0] - size/2, center[1] - size/2, size, size);
         }
     }
 
+    private float[] projectIsoPoint(float x, float y, float z, float centerX, float centerY) {
+        // 1. Translate to center
+        float relX = x - centerX;
+        float relY = y - centerY;
+        
+        // 2. Rotate
+        float rad = isoRotationDegrees * MathUtils.degreesToRadians;
+        float cos = MathUtils.cos(rad);
+        float sin = MathUtils.sin(rad);
+        float rotX = relX * cos - relY * sin;
+        float rotY = relX * sin + relY * cos;
+        
+        // 3. Translate back (optional, but we want to rotate around center)
+        // Actually for iso projection we usually want 0,0 to be the anchor.
+        // Let's keep it relative to center for the projection.
+        
+        // 4. Isometric projection
+        // Standard iso: x = (x - y), y = (x + y) / 2
+        // But we need to scale by tile size.
+        // isoX = (rotX - rotY) * (isoTileWidth / 2f)
+        // isoY = (rotX + rotY) * (isoTileHeight / 2f)
+        // Note: Our original code had isoX = -(y-x) which is (x-y).
+        
+        float isoX = (rotX - rotY) * (isoTileWidth / 2f);
+        float isoY = (rotX + rotY) * (isoTileHeight / 2f) + (z * isoBlockHeight);
+        
+        return new float[] { isoOriginX + isoX, isoOriginY + isoY };
+    }
+
     private void drawIsoCubeMarker(ShapeRenderer sr, float x, float y, float z) {
-        float isoX = (y - x) * (isoTileWidth / 2f);
-        float isoY = (x + y) * (isoTileHeight / 2f) + (z * isoBlockHeight);
-        float centerX = isoOriginX + isoX;
-        float centerY = isoOriginY + isoY + isoBlockHeight * 0.2f;
-        float halfW = isoTileWidth * 0.25f;
-        float halfH = isoTileHeight * 0.25f;
+        float centerX = gridWorld.getWidth() / 2f;
+        float centerY = gridWorld.getDepth() / 2f;
         float bodyHeight = isoBlockHeight * 0.4f;
-
-        // Top diamond
-        sr.triangle(centerX, centerY + halfH, centerX - halfW, centerY, centerX + halfW, centerY);
-        sr.triangle(centerX, centerY - halfH, centerX - halfW, centerY, centerX + halfW, centerY);
-
-        // Front face
-        sr.triangle(centerX - halfW, centerY, centerX - halfW, centerY - bodyHeight, centerX, centerY - halfH);
-        sr.triangle(centerX + halfW, centerY, centerX + halfW, centerY - bodyHeight, centerX, centerY - halfH);
+        
+        // Top face corners
+        float[] t1 = projectIsoPoint(x, y, z, centerX, centerY);
+        float[] t2 = projectIsoPoint(x + 1, y, z, centerX, centerY);
+        float[] t3 = projectIsoPoint(x + 1, y + 1, z, centerX, centerY);
+        float[] t4 = projectIsoPoint(x, y + 1, z, centerX, centerY);
+        
+        // Draw top diamond
+        sr.triangle(t1[0], t1[1], t2[0], t2[1], t3[0], t3[1]);
+        sr.triangle(t1[0], t1[1], t3[0], t3[1], t4[0], t4[1]);
+        
+        // Draw front face (approximate for marker)
+        // We'll just draw a vertical line down from the bottom corner of the diamond
+        // to give it some volume feeling, or just the top diamond is enough for a marker.
+        // Let's keep it simple as a flat marker for now to avoid complex occlusion logic.
     }
     
     private Color getBlockColor(GridWorld.BlockState block) {
@@ -865,79 +919,122 @@ public class DualViewScreen implements Screen {
         if (!compassVisible) {
             return;
         }
+        // In side view (without split), North is "into" the screen, so a 2D compass is confusing.
+        if (viewMode == ViewMode.SIDE_SCROLLER && !splitViewEnabled) {
+            return;
+        }
         float screenWidth = Gdx.graphics.getWidth();
         float screenHeight = Gdx.graphics.getHeight();
         float compassSize = 80f;
-        float halfSize = compassSize / 2f;
+        float radius = compassSize / 2f;
         float rightMargin = 25f;
         float topMargin = 80f;
-        float centerX = screenWidth - rightMargin - halfSize;
-        float centerY = screenHeight - topMargin - halfSize;
+        float centerX = screenWidth - rightMargin - radius;
+        float centerY = screenHeight - topMargin - radius;
+        
         float rotation = getCompassRotationDegreesClockwise();
-        float sin = MathUtils.sinDeg(rotation);
-        float cos = MathUtils.cosDeg(rotation);
-        float northX = sin;
-        float northY = cos;
-        float eastX = cos;
-        float eastY = -sin;
-
+        
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         sr.setProjectionMatrix(overlayProjection);
         sr.begin(ShapeRenderer.ShapeType.Filled);
-        sr.setColor(0f, 0f, 0f, 0.55f);
-        sr.circle(centerX, centerY, halfSize + 12f, 40);
-        sr.setColor(0.95f, 0.95f, 0.95f, 0.85f);
-        sr.rectLine(
-            centerX - eastX * halfSize,
-            centerY - eastY * halfSize,
-            centerX + eastX * halfSize,
-            centerY + eastY * halfSize,
-            2f);
-        sr.rectLine(
-            centerX - northX * halfSize,
-            centerY - northY * halfSize,
-            centerX + northX * halfSize,
-            centerY + northY * halfSize,
-            2f);
-        sr.setColor(0.95f, 0.3f, 0.3f, 0.9f);
-        float tipLength = halfSize + 8f;
-        float baseOffset = halfSize - 4f;
-        float wingSpread = 6f;
-        float tipX = centerX + northX * tipLength;
-        float tipY = centerY + northY * tipLength;
-        float baseCenterX = centerX + northX * baseOffset;
-        float baseCenterY = centerY + northY * baseOffset;
-        float leftWingX = baseCenterX - eastX * wingSpread;
-        float leftWingY = baseCenterY - eastY * wingSpread;
-        float rightWingX = baseCenterX + eastX * wingSpread;
-        float rightWingY = baseCenterY + eastY * wingSpread;
-        sr.triangle(tipX, tipY, leftWingX, leftWingY, rightWingX, rightWingY);
+        
+        // 1. Rim (Dark Gray)
+        sr.setColor(0.2f, 0.2f, 0.2f, 0.9f);
+        sr.circle(centerX, centerY, radius + 4f, 50);
+        
+        // 2. Bezel (Lighter Gray gradient simulation)
+        sr.setColor(0.4f, 0.4f, 0.4f, 0.9f);
+        sr.circle(centerX, centerY, radius, 50);
+        sr.setColor(0.3f, 0.3f, 0.3f, 0.9f);
+        sr.circle(centerX, centerY, radius - 2f, 50);
+        
+        // 3. Face (White/Off-white)
+        sr.setColor(0.95f, 0.95f, 0.92f, 0.95f);
+        sr.circle(centerX, centerY, radius - 6f, 40);
+        
+        // 4. Ticks
+        sr.setColor(0.1f, 0.1f, 0.1f, 0.8f);
+        for (int i = 0; i < 4; i++) {
+            float angle = i * 90f + rotation;
+            float r1 = radius - 6f;
+            float r2 = radius - 12f;
+            float tickX1 = centerX + MathUtils.sinDeg(angle) * r1;
+            float tickY1 = centerY + MathUtils.cosDeg(angle) * r1;
+            float tickX2 = centerX + MathUtils.sinDeg(angle) * r2;
+            float tickY2 = centerY + MathUtils.cosDeg(angle) * r2;
+            sr.rectLine(tickX1, tickY1, tickX2, tickY2, 2f);
+        }
+        
+        // 5. Needle (3D style)
+        float needleLen = radius - 10f;
+        float needleWidth = 8f;
+        float rad = -rotation * MathUtils.degreesToRadians; // Counter-rotate for needle
+        float cos = MathUtils.cos(rad);
+        float sin = MathUtils.sin(rad);
+        
+        // North half (Red)
+        // Left side (darker)
+        sr.setColor(0.7f, 0.1f, 0.1f, 1f);
+        sr.triangle(
+            centerX, centerY,
+            centerX - needleWidth/2 * cos, centerY - needleWidth/2 * sin,
+            centerX + needleLen * sin, centerY - needleLen * cos // Tip
+        );
+        // Right side (lighter)
+        sr.setColor(0.9f, 0.2f, 0.2f, 1f);
+        sr.triangle(
+            centerX, centerY,
+            centerX + needleWidth/2 * cos, centerY + needleWidth/2 * sin,
+            centerX + needleLen * sin, centerY - needleLen * cos // Tip
+        );
+        
+        // South half (White/Gray)
+        // Left side (darker)
+        sr.setColor(0.7f, 0.7f, 0.7f, 1f);
+        sr.triangle(
+            centerX, centerY,
+            centerX - needleWidth/2 * cos, centerY - needleWidth/2 * sin,
+            centerX - needleLen * sin, centerY + needleLen * cos // Tip
+        );
+        // Right side (lighter)
+        sr.setColor(0.9f, 0.9f, 0.9f, 1f);
+        sr.triangle(
+            centerX, centerY,
+            centerX + needleWidth/2 * cos, centerY + needleWidth/2 * sin,
+            centerX - needleLen * sin, centerY + needleLen * cos // Tip
+        );
+        
+        // Center cap
+        sr.setColor(0.2f, 0.2f, 0.2f, 1f);
+        sr.circle(centerX, centerY, 4f, 16);
+        
         sr.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
 
+        // Labels (N, E, S, W) - Rotate with compass
         overlayBatch.setProjectionMatrix(overlayProjection);
         overlayBatch.begin();
-        float textOffset = halfSize + 20f;
-        overlayFont.draw(overlayBatch, "N",
-            centerX + northX * textOffset - 4f,
-            centerY + northY * textOffset + 5f);
-        overlayFont.draw(overlayBatch, "S",
-            centerX - northX * textOffset - 4f,
-            centerY - northY * textOffset + 12f);
-        overlayFont.draw(overlayBatch, "E",
-            centerX + eastX * textOffset - 12f,
-            centerY + eastY * textOffset + 5f);
-        overlayFont.draw(overlayBatch, "W",
-            centerX - eastX * textOffset - 6f,
-            centerY - eastY * textOffset + 5f);
+        drawCompassLabel("N", 0, rotation, centerX, centerY, radius - 20f);
+        drawCompassLabel("E", 90, rotation, centerX, centerY, radius - 20f);
+        drawCompassLabel("S", 180, rotation, centerX, centerY, radius - 20f);
+        drawCompassLabel("W", 270, rotation, centerX, centerY, radius - 20f);
         overlayBatch.end();
+    }
+
+    private void drawCompassLabel(String text, float angleOffset, float rotation, float cx, float cy, float dist) {
+        float angle = angleOffset + rotation;
+        float x = cx + MathUtils.sinDeg(angle) * dist - 4f;
+        float y = cy + MathUtils.cosDeg(angle) * dist + 5f;
+        overlayFont.draw(overlayBatch, text, x, y);
     }
 
     private float getCompassRotationDegreesClockwise() {
         if (viewMode == ViewMode.ISOMETRIC) {
-            return 45f;
+            // Base isometric rotation is -45 degrees (North is top-left)
+            // Add the user's manual rotation
+            return -45f - isoRotationDegrees;
         }
         return 0f;
     }
