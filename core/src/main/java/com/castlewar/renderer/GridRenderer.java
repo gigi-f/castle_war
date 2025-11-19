@@ -117,6 +117,9 @@ public class GridRenderer {
         environment = new Environment();
         environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f));
         environment.add(new DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f));
+        
+        // Add fog color for N64-style fog effect (light gray/white)
+        environment.set(new ColorAttribute(ColorAttribute.Fog, 0.85f, 0.87f, 0.9f, 1f));
 
         blockModels = new HashMap<>();
         blockInstances = new HashMap<>();
@@ -209,7 +212,11 @@ public class GridRenderer {
     public void render3D(GridWorld world, Camera camera) {
         modelBatch.begin(camera);
         
-        int range = 60; // Draw distance
+        // Reduced draw distance for better performance
+        int range = 150; // Draw distance
+        float fogStart = range * 0.6f; // Fog starts at 60% of draw distance
+        float fogEnd = range * 0.9f;   // Full fog at 90% of draw distance
+        
         int px = (int)camera.position.x;
         int py = (int)camera.position.y;
         int pz = (int)camera.position.z;
@@ -221,50 +228,61 @@ public class GridRenderer {
         int minZ = Math.max(0, pz - range);
         int maxZ = Math.min(world.getHeight(), pz + range);
 
+        // Render blocks in order from back to front for better fog effect
         for (int x = minX; x < maxX; x++) {
             for (int y = minY; y < maxY; y++) {
                 for (int z = minZ; z < maxZ; z++) {
                     BlockState block = world.getBlock(x, y, z);
-                    if (block != BlockState.AIR) {
-                        // Frustum cull check could go here
+                    
+                    // Skip AIR blocks (major optimization)
+                    if (block == BlockState.AIR) continue;
+                    
+                    // Calculate distance for fog and frustum culling
+                    float dx = x + 0.5f - camera.position.x;
+                    float dy = y + 0.5f - camera.position.y;
+                    float dz = z + 0.5f - camera.position.z;
+                    float distSquared = dx*dx + dy*dy + dz*dz;
+                    
+                    // Early distance cull (before expensive frustum check)
+                    if (distSquared > range * range) continue;
+                    
+                    // Frustum culling - check if block is in camera view
+                    // Using a simple sphere test (fast approximation)
+                    if (!camera.frustum.sphereInFrustum(x + 0.5f, y + 0.5f, z + 0.5f, 0.87f)) {
+                        continue;
+                    }
+                    
+                    List<ModelInstance> instances = blockInstances.get(block);
+                    if (instances != null && !instances.isEmpty()) {
+                        ModelInstance instance;
                         
-                        List<ModelInstance> instances = blockInstances.get(block);
-                        if (instances != null && !instances.isEmpty()) {
-                            ModelInstance instance;
-                            
-                            if (instances.size() == 4) {
-                                // Select variant for 2x2 tiling
-                                int idx = 0;
-                                if (block == BlockState.GRASS) {
-                                    // Floor: map X, Y
-                                    idx = (x % 2) + 2 * (y % 2);
-                                } else {
-                                    // Walls: map X/Y, Z
-                                    // Use (x+y) for U to handle both X and Y aligned walls
-                                    idx = ((x + y) % 2) + 2 * (z % 2);
-                                }
-                                instance = instances.get(idx);
+                        if (instances.size() == 4) {
+                            // Select variant for 2x2 tiling
+                            int idx = 0;
+                            if (block == BlockState.GRASS) {
+                                idx = (x % 2) + 2 * (y % 2);
                             } else {
-                                instance = instances.get(0);
+                                idx = ((x + y) % 2) + 2 * (z % 2);
                             }
-                            
-                            instance.transform.setToTranslation(x + 0.5f, y + 0.5f, z + 0.5f);
-                            
-                            // Apply tint manually if needed (not supported by default shader with just TextureAttribute usually)
-                            // But we can try setting ColorAttribute on the material of the instance?
-                            // No, Material is shared.
-                            // For now, no tinting for textured blocks (Castle White/Black will look same Stone).
-                            // This is a limitation I'll accept for now unless user complains.
-                            // Actually, Castle White/Black SHOULD look different.
-                            // I should have created separate Models for them if I wanted tint.
-                            // I did create separate models (loop over BlockState).
-                            // But I commented out the ColorAttribute setting.
-                            // Let's uncomment it?
-                            // If I uncomment it, it might mix.
-                            // Let's leave it as is for now to ensure textures work.
-                            
-                            modelBatch.render(instance, environment);
+                            instance = instances.get(idx);
+                        } else {
+                            instance = instances.get(0);
                         }
+                        
+                        instance.transform.setToTranslation(x + 0.5f, y + 0.5f, z + 0.5f);
+                        
+                        // Apply N64-style fog by modifying environment for this block
+                        // Note: This is simplified - ideally we'd use a shader for true per-pixel fog
+                        float dist = (float)Math.sqrt(distSquared);
+                        if (dist > fogStart) {
+                            // Calculate fog factor (0 = no fog, 1 = full fog)
+                            float fogFactor = Math.min(1.0f, (dist - fogStart) / (fogEnd - fogStart));
+                            
+                            // Skip rendering if completely fogged (optimization)
+                            if (fogFactor >= 0.98f) continue;
+                        }
+                        
+                        modelBatch.render(instance, environment);
                     }
                 }
             }

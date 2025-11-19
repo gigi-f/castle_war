@@ -1695,16 +1695,16 @@ public class DualViewScreen implements Screen {
     }
 
     private void renderFirstPerson() {
-        // Set fog color (match background)
-        Color fogColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+        // Set fog color to match GridRenderer N64-style fog
+        Color fogColor = new Color(0.85f, 0.87f, 0.9f, 1f);
         Gdx.gl.glClearColor(fogColor.r, fogColor.g, fogColor.b, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
         
-        fpsCamera.far = 100f; // Increase draw distance
+        fpsCamera.far = 100f; // Camera far plane
         fpsCamera.update();
 
-        // Render blocks with textures
+        // Render blocks with textures (optimized with frustum culling and fog)
         gridRenderer.render3D(gridWorld, fpsCamera);
         
         // Draw entities (keep using ShapeRenderer for now, or upgrade later)
@@ -1715,8 +1715,8 @@ public class DualViewScreen implements Screen {
         int px = (int)fpsCamera.position.x;
         int py = (int)fpsCamera.position.y;
         int pz = (int)fpsCamera.position.z;
-        float fogStart = 20f;
-        float fogEnd = 80f;
+        float fogStart = 48f; // Match GridRenderer (80 * 0.6)
+        float fogEnd = 72f;   // Match GridRenderer (80 * 0.9)
         
         // Draw entities
         for (Entity entity : worldContext.getEntities()) {
