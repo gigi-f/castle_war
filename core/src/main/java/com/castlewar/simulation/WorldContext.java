@@ -273,6 +273,52 @@ public class WorldContext {
         buildSpiralStaircase(layout, x1, y2, stairType, 0);
         // NE (x2, y2) -> Face West (2)
         buildSpiralStaircase(layout, x2, y2, stairType, 2);
+
+        // Build Front Wall connecting the front towers
+        buildFrontWall(layout, startX, startY);
+    }
+
+    private void buildFrontWall(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y1 = startY + r;
+        int y2 = startY + layout.height - 1 - r;
+        
+        int wallX = layout.gateOnRight ? x2 : x1;
+        int wallThickness = 5;
+        
+        // Connect the towers (overlap slightly to ensure seal)
+        // Towers are at y1 and y2. 
+        // We want to fill from y1 + 4 to y2 - 4
+        int wallStartY = y1 + 4;
+        int wallEndY = y2 - 4;
+        
+        // Build Wall
+        for (int x = wallX - wallThickness/2; x <= wallX + wallThickness/2; x++) {
+            for (int y = wallStartY; y <= wallEndY; y++) {
+                for (int z = 0; z < layout.battlementLevel; z++) {
+                    gridWorld.setBlock(x, y, z, layout.wallType);
+                }
+                // Battlements
+                if ((x + y) % 2 == 0) {
+                    gridWorld.setBlock(x, y, layout.battlementLevel, layout.wallType);
+                }
+            }
+        }
+        
+        // Carve Archway
+        int centerY = startY + layout.height / 2;
+        int archWidth = 12;
+        int archHeight = 10;
+        
+        for (int x = wallX - wallThickness/2; x <= wallX + wallThickness/2; x++) {
+            for (int y = centerY - archWidth/2; y <= centerY + archWidth/2; y++) {
+                for (int z = 0; z < archHeight; z++) {
+                    gridWorld.setBlock(x, y, z, GridWorld.BlockState.AIR);
+                }
+            }
+        }
     }
 
     private void buildCastle(CastleLayout layout, int startX, int startY,
