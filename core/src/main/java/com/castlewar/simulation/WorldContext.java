@@ -280,6 +280,40 @@ public class WorldContext {
         }
     }
 
+    private void buildSouthWalkway(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y1 = startY + r;
+        
+        // Second level is at z=12 (first level is 0-11, second level is 12-23)
+        int walkwayZ = 12;
+        int walkwayWidth = 3; // 3 blocks wide walkway
+        
+        // The walkway should run from door to door
+        // Doors face East for left turret and West for right turret
+        // They are positioned on the East side of (x1, y1) and West side of (x2, y1)
+        
+        // Walkway runs along the south side, connecting the doors
+        int walkwayY = y1 - 2; // Position the walkway just south of the turret centers
+        
+        GridWorld.BlockState floorType = getFloorType(layout.wallType);
+        
+        // Build the walkway floor from turret to turret
+        int walkwayStartX = x1 + r; // Right edge of left turret (where door exits)
+        int walkwayEndX = x2 - r;   // Left edge of right turret (where door exits)
+        
+        for (int x = walkwayStartX; x <= walkwayEndX; x++) {
+            for (int y = walkwayY - walkwayWidth/2; y <= walkwayY + walkwayWidth/2; y++) {
+                gridWorld.setBlock(x, y, walkwayZ, floorType);
+                // Clear space above for headroom
+                for (int clearZ = walkwayZ + 1; clearZ < walkwayZ + 6; clearZ++) {
+                    gridWorld.setBlock(x, y, clearZ, GridWorld.BlockState.AIR);
+                }
+            }
+        }
+    }
+
     private void buildMultiLevelCastle(CastleLayout layout, int startX, int startY) {
         GridWorld.BlockState floorType = getFloorType(layout.wallType);
         GridWorld.BlockState stairType = getStairType(layout.wallType);
@@ -304,6 +338,8 @@ public class WorldContext {
         buildFrontWall(layout, startX, startY);
         // Connect southernmost turrets with a wall south of their openings
         buildSouthTurretWall(layout, startX, startY);
+        // Add second-level walkway connecting the south turrets
+        buildSouthWalkway(layout, startX, startY);
     }
 
     private void buildFrontWall(CastleLayout layout, int startX, int startY) {
