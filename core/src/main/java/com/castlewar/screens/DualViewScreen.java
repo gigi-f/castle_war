@@ -1704,49 +1704,19 @@ public class DualViewScreen implements Screen {
         fpsCamera.far = 100f; // Increase draw distance
         fpsCamera.update();
 
+        // Render blocks with textures
+        gridRenderer.render3D(gridWorld, fpsCamera);
+        
+        // Draw entities (keep using ShapeRenderer for now, or upgrade later)
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.setProjectionMatrix(fpsCamera.combined);
         sr.begin(ShapeRenderer.ShapeType.Filled);
         
-        // Draw visible blocks around player
-        int range = 80; // Increased range
         int px = (int)fpsCamera.position.x;
         int py = (int)fpsCamera.position.y;
         int pz = (int)fpsCamera.position.z;
-        
-        int minX = Math.max(0, px - range);
-        int maxX = Math.min(gridWorld.getWidth(), px + range);
-        int minY = Math.max(0, py - range);
-        int maxY = Math.min(gridWorld.getDepth(), py + range);
-        int minZ = Math.max(0, pz - range);
-        int maxZ = Math.min(gridWorld.getHeight(), pz + range);
-        
         float fogStart = 20f;
         float fogEnd = 80f;
-
-        for (int x = minX; x < maxX; x++) {
-            for (int y = minY; y < maxY; y++) {
-                for (int z = minZ; z < maxZ; z++) {
-                    GridWorld.BlockState block = gridWorld.getBlock(x, y, z);
-                    if (block != GridWorld.BlockState.AIR) {
-                        float dist = Vector3.dst(px, py, pz, x + 0.5f, y + 0.5f, z + 0.5f);
-                        
-                        // Occlusion fix: Don't render blocks too close to camera
-                        if (dist < 1.1f) continue;
-
-                        Color color = gridRenderer.getBlockColor(block).cpy();
-                        
-                        // Apply fog
-                        float fogFactor = MathUtils.clamp((dist - fogStart) / (fogEnd - fogStart), 0f, 1f);
-                        color.lerp(fogColor, fogFactor);
-                        
-                        sr.setColor(color);
-                        // Draw box (x, y, z is corner)
-                        sr.box(x, y, z, 1, 1, 1);
-                    }
-                }
-            }
-        }
         
         // Draw entities
         for (Entity entity : worldContext.getEntities()) {
@@ -1760,7 +1730,8 @@ public class DualViewScreen implements Screen {
             color.lerp(fogColor, fogFactor);
             
             sr.setColor(color);
-            sr.box(entity.getX(), entity.getY(), entity.getZ(), 0.6f, 0.6f, 1.8f);
+            // Draw box with Z offset so it sits on the ground (box is centered at the given position)
+            sr.box(entity.getX(), entity.getY(), entity.getZ() + 1.8f, 0.6f, 0.6f, 3.6f);
         }
         
         sr.end();

@@ -242,13 +242,33 @@ public abstract class Unit extends Entity {
     }
 
     protected boolean isValidPos(GridWorld world, float x, float y, float z) {
-        int bx = Math.round(x);
-        int by = Math.round(y);
+        // Collision radius to prevent camera clipping through walls
+        float radius = 0.6f; // Player width/2
+        
         int bz = (int)Math.floor(z); 
         int bzHead = (int)Math.floor(z + 1.5f);
 
+        // Check center position
+        int bx = Math.round(x);
+        int by = Math.round(y);
         if (world.isSolid(world.getBlock(bx, by, bz))) return false;
         if (world.isSolid(world.getBlock(bx, by, bzHead))) return false;
+        
+        // Check 4 points around the entity at the collision radius
+        // This prevents the player from getting so close to walls that the camera clips through
+        float[][] offsets = {
+            {radius, 0},
+            {-radius, 0},
+            {0, radius},
+            {0, -radius}
+        };
+        
+        for (float[] offset : offsets) {
+            int checkX = Math.round(x + offset[0]);
+            int checkY = Math.round(y + offset[1]);
+            if (world.isSolid(world.getBlock(checkX, checkY, bz))) return false;
+            if (world.isSolid(world.getBlock(checkX, checkY, bzHead))) return false;
+        }
         
         return true;
     }

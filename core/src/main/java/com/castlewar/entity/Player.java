@@ -72,7 +72,7 @@ public class Player extends Unit {
     }
 
     private void updateCamera() {
-        camera.position.set(position.x, position.y, position.z + 1.6f); // Eye level
+        camera.position.set(position.x, position.y, position.z + 3.2f); // Eye level (doubled height)
         
         // Update direction from yaw/pitch
         // Assuming Z is up
