@@ -32,6 +32,7 @@ public class Player extends Unit {
     public void update(float delta, GridWorld world) {
         handleInput(delta);
         applyPhysics(delta, world);
+        checkEnvironment(world); // Check after move
         updateCamera();
     }
 
@@ -94,34 +95,68 @@ public class Player extends Unit {
         float nextY = position.y + velocity.y * delta;
         float nextZ = position.z + velocity.z * delta;
 
-        // Collision Detection (Simple AABB point check for now)
+        // Collision Detection
+        // We separate X and Y axes to allow sliding against walls
+        
+        boolean stepped = false;
+
         // Check X
         if (isValidPos(world, nextX, position.y, position.z)) {
             position.x = nextX;
+        } else if (onGround && isValidPos(world, nextX, position.y, position.z + 1)) {
+            // Auto-step up
+            position.x = nextX;
+            position.z += 1;
+            stepped = true;
         } else {
             velocity.x = 0;
         }
 
         // Check Y
+        // If we already stepped up in X, we are at z+1. 
+        // We should check Y at the NEW z.
         if (isValidPos(world, position.x, nextY, position.z)) {
             position.y = nextY;
+        } else if (onGround && !stepped && isValidPos(world, position.x, nextY, position.z + 1)) {
+            // Auto-step up (only if we haven't already stepped this frame)
+            position.y = nextY;
+            position.z += 1;
+            stepped = true;
         } else {
-            velocity.y = 0;
+             // Try stepping if we already stepped? 
+             // If we stepped in X, we are at Z+1.
+             // If Y is BLOCKED at Z+1, can we step to Z+2?
+             // That seems excessive (2 blocks per frame).
+             // So we just stop Y if blocked at current Z.
+             velocity.y = 0;
         }
 
-        // Check Z
-        if (isValidPos(world, position.x, position.y, nextZ)) {
-            position.z = nextZ;
-            onGround = false;
-        } else {
-            if (velocity.z < 0) {
-                onGround = true;
-                // Snap to floor?
-                position.z = Math.round(position.z); 
-                // Actually, if we hit floor, we are at z = floor_z + 1?
-                // Or just stop falling.
-            }
+        // Check Z (Gravity/Jumping)
+        // If we stepped, we are already on ground at new Z.
+        // But we still need to check if we hit a ceiling during the step?
+        // For simplicity, if we stepped, we assume we are supported.
+        
+        if (stepped) {
             velocity.z = 0;
+            onGround = true;
+        } else {
+            if (isValidPos(world, position.x, position.y, nextZ)) {
+                position.z = nextZ;
+                onGround = false;
+            } else {
+                if (velocity.z < 0) {
+                    onGround = true;
+                    // Snap to nearest integer floor to prevent micro-bouncing
+                    position.z = (float)Math.floor(position.z); 
+                    // Ensure we are not inside the floor
+                    if (!isValidPos(world, position.x, position.y, position.z)) {
+                         position.z += 0.1f; // Push up slightly
+                    }
+                } else {
+                    // Hit ceiling
+                    velocity.z = 0;
+                }
+            }
         }
         
         // Bounds check

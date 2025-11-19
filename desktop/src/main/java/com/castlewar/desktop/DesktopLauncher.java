@@ -27,13 +27,6 @@ public class DesktopLauncher {
             primaryConfig
         );
 
-        Lwjgl3WindowConfiguration sideConfig = new Lwjgl3WindowConfiguration();
-        sideConfig.setTitle("Castle War – Side View");
-        sideConfig.setWindowedMode(1000, 720);
-        sideConfig.setResizable(true);
-        app.newWindow(
-            new CastleWarGame(sharedContext, DualViewScreen.Options.sideStandalone()),
-            sideConfig
-        );
+
     }
 }

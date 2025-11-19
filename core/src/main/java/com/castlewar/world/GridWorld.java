@@ -24,7 +24,8 @@ public class GridWorld {
     CASTLE_WHITE_STAIR,
     CASTLE_BLACK_STAIR,
     DOOR,
-    WINDOW
+    WINDOW,
+    WATER
     }
     
     public GridWorld(int width, int depth, int height) {
@@ -130,7 +131,6 @@ public class GridWorld {
     
     public boolean isSolid(BlockState block) {
         return block != BlockState.AIR && 
-               block != BlockState.CASTLE_WHITE_STAIR && 
-               block != BlockState.CASTLE_BLACK_STAIR;
+               block != BlockState.WATER; // Water is not solid (can fall in)
     }
 }

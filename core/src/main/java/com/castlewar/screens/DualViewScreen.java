@@ -102,7 +102,7 @@ public class DualViewScreen implements Screen {
     private final float isoBlockHeight;
     private float isoOriginX;
     private float isoOriginY;
-    private float isoZoom = 1f;
+    private float isoZoom = 5f;
     private ViewMode viewMode;
     private boolean keySlashPressed;
     private int sideViewSlice;
@@ -192,9 +192,8 @@ public class DualViewScreen implements Screen {
         fpsCamera.near = 0.1f;
         fpsCamera.far = 300f;
         fpsCamera.up.set(0, 0, 1); // Z is up
-        isoOriginX = isoWorldWidth / 2f;
-        isoOriginY = gridWorld.getHeight() * isoBlockHeight
-            + (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileHeight / 4f);
+        isoOriginX = 0;
+        isoOriginY = 0;
         
         viewMode = options.initialViewMode;
         keySlashPressed = false;
@@ -279,20 +278,20 @@ public class DualViewScreen implements Screen {
             }
         }
 
-        if (viewMode == ViewMode.TOP_DOWN) {
-            renderTopDownFullView();
-        } else if (viewMode == ViewMode.SIDE_SCROLLER) {
-            renderSideScrollerFullView();
-        } else if (viewMode == ViewMode.ISOMETRIC) {
-            renderIsometricFullView();
-        } else if (viewMode == ViewMode.FIRST_PERSON) {
-            if (player != null) {
-                player.update(Gdx.graphics.getDeltaTime(), gridWorld);
-            }
-            renderFirstPerson();
-        } else if (splitViewEnabled) { // This case handles split view if not in a specific full-screen mode
-            renderSplitViews();
+        if (viewMode == ViewMode.ISOMETRIC) {
+        renderIsometricFullView();
+    } else if (viewMode == ViewMode.FIRST_PERSON) {
+        if (player != null) {
+            player.update(Gdx.graphics.getDeltaTime(), gridWorld);
         }
+        renderFirstPerson();
+    } else if (splitViewEnabled) {
+        renderSplitViews();
+    } else if (viewMode == ViewMode.TOP_DOWN) {
+        renderTopDownFullView();
+    } else if (viewMode == ViewMode.SIDE_SCROLLER) {
+        renderSideScrollerFullView();
+    }
         
         // Display view info overlay/logging
         renderOverlay();
@@ -490,12 +489,22 @@ public class DualViewScreen implements Screen {
         }
         boolean updated = false;
         if (Gdx.input.isKeyPressed(Input.Keys.MINUS)) {
-            isoZoom = Math.min(3f, isoZoom + 0.1f);
-            updated = true;
+            if (!keyMinusPressed) {
+                isoZoom = Math.min(30f, isoZoom + 0.5f); // Zoom out
+                updated = true;
+            }
+            keyMinusPressed = true;
+        } else {
+            keyMinusPressed = false;
         }
         if (Gdx.input.isKeyPressed(Input.Keys.EQUALS)) {
-            isoZoom = Math.max(0.3f, isoZoom - 0.1f);
-            updated = true;
+            if (!keyEqualsPressed) {
+                isoZoom = Math.max(0.1f, isoZoom - 0.5f); // Zoom in
+                updated = true;
+            }
+            keyEqualsPressed = true;
+        } else {
+            keyEqualsPressed = false;
         }
         if (updated) {
             isoCamera.zoom = isoZoom;
@@ -1006,28 +1015,7 @@ public class DualViewScreen implements Screen {
 
     
     private Color getBlockColor(GridWorld.BlockState block) {
-        switch (block) {
-            case GRASS:
-                return new Color(0.3f, 0.7f, 0.2f, 1);
-            case DIRT:
-                return new Color(0.6f, 0.4f, 0.2f, 1);
-            case STONE:
-                return new Color(0.2f, 0.4f, 0.8f, 1);
-            case CASTLE_WHITE:
-                return new Color(0.95f, 0.95f, 0.95f, 1);
-            case CASTLE_BLACK:
-                return new Color(0.15f, 0.15f, 0.15f, 1);
-            case CASTLE_WHITE_FLOOR:
-                return new Color(0.85f, 0.85f, 0.78f, 1);
-            case CASTLE_BLACK_FLOOR:
-                return new Color(0.25f, 0.25f, 0.25f, 1);
-            case CASTLE_WHITE_STAIR:
-                return new Color(0.98f, 0.78f, 0.35f, 1);
-            case CASTLE_BLACK_STAIR:
-                return new Color(0.65f, 0.4f, 0.2f, 1);
-            default:
-                return Color.WHITE;
-        }
+        return gridRenderer.getBlockColor(block);
     }
     
     private void renderOverlay() {

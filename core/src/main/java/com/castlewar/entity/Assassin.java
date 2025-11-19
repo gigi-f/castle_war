@@ -31,6 +31,9 @@ public class Assassin extends Unit {
 
     @Override
     public void update(float delta, GridWorld world) {
+        checkEnvironment(world);
+        if (hp <= 0) return;
+
         // Assassins are fast
         float speed = 4.0f; 
         
@@ -100,58 +103,7 @@ public class Assassin extends Unit {
             pickRandomMove(world);
         } else if (targetKing != null) {
             // Hunt King
-            pickMoveTowards(world, targetKing.getPosition());
-        } else {
-            pickRandomMove(world);
-        }
-    }
-
-    private void pickMoveTowards(GridWorld world, Vector3 target) {
-        int currentX = Math.round(position.x);
-        int currentY = Math.round(position.y);
-        int currentZ = Math.round(position.z);
-
-        float bestDist = Float.MAX_VALUE;
-        Vector3 bestMove = null;
-
-        // Check neighbors (including vertical for climbing)
-        int[][] offsets = {
-            {1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, // Horizontal
-            {0,0,1}, {0,0,-1} // Vertical (Climbing)
-        };
-        
-        for (int[] off : offsets) {
-            int nx = currentX + off[0];
-            int ny = currentY + off[1];
-            int nz = currentZ + off[2];
-            
-            // Use getValidMoveTarget to handle hops if moving horizontally
-            // If moving vertically, getValidMoveTarget might return null if not adjacent to wall?
-            // But we set canClimb=true, so isValidMove handles vertical if adjacent.
-            
-            // For vertical moves (off[2] != 0), we just check isValidMove directly.
-            // For horizontal moves, we check getValidMoveTarget (which tries direct then hop).
-            
-            Vector3 move = null;
-            if (off[2] != 0) {
-                if (isValidMove(world, nx, ny, nz)) {
-                    move = new Vector3(nx, ny, nz);
-                }
-            } else {
-                move = getValidMoveTarget(world, nx, ny, nz);
-            }
-
-            if (move != null) {
-                float d = Vector3.dst(move.x, move.y, move.z, target.x, target.y, target.z);
-                if (d < bestDist) {
-                    bestDist = d;
-                    bestMove = move;
-                }
-            }
-        }
-
-        if (bestMove != null) {
-            targetPosition = bestMove;
+            pickSmartMove(world, targetKing.getPosition());
         } else {
             pickRandomMove(world);
         }
@@ -161,9 +113,9 @@ public class Assassin extends Unit {
         int currentX = Math.round(position.x);
         int currentY = Math.round(position.y);
         int currentZ = Math.round(position.z);
-        
-        // Try 10 random moves
-        for(int i=0; i<10; i++) {
+
+        // Try a few times to find a valid random move
+        for (int i = 0; i < 5; i++) {
             int dx = MathUtils.random(-1, 1);
             int dy = MathUtils.random(-1, 1);
             int dz = MathUtils.random(-1, 1);
@@ -176,9 +128,9 @@ public class Assassin extends Unit {
             int nz = currentZ + dz;
             
             Vector3 move = null;
-            if (dz != 0) {
+            if (dz != 0) { // Vertical move
                  if (isValidMove(world, nx, ny, nz)) move = new Vector3(nx, ny, nz);
-            } else {
+            } else { // Horizontal move
                  move = getValidMoveTarget(world, nx, ny, nz);
             }
             
@@ -187,5 +139,9 @@ public class Assassin extends Unit {
                 return;
             }
         }
+        // If no valid random move found after several tries, stay put for now
+        targetPosition = null;
     }
+
 }
+

@@ -37,6 +37,9 @@ public class Guard extends Unit {
 
     @Override
     public void update(float delta, GridWorld world) {
+        checkEnvironment(world);
+        if (hp <= 0) return;
+
         if (targetPosition != null) {
             // Move towards target
             float speed = 2.5f; // Slightly faster than King
@@ -81,50 +84,7 @@ public class Guard extends Unit {
     }
 
     private void pickMoveTowards(GridWorld world, Vector3 target) {
-        int currentX = Math.round(position.x);
-        int currentY = Math.round(position.y);
-        int currentZ = Math.round(position.z);
-
-        float bestDist = Float.MAX_VALUE;
-        Vector3 bestMove = null;
-
-        // Check neighbors
-        int[][] offsets = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}};
-        for (int[] off : offsets) {
-            int nx = currentX + off[0];
-            int ny = currentY + off[1];
-            int nz = currentZ; // Flat movement first
-            
-            Vector3 move = getValidMoveTarget(world, nx, ny, nz);
-            if (move != null) {
-                float d = Vector3.dst(move.x, move.y, move.z, target.x, target.y, target.z);
-                if (d < bestDist) {
-                    bestDist = d;
-                    bestMove = move;
-                }
-            }
-        }
-        
-        // Also check stairs
-        GridWorld.BlockState currentBlock = world.getBlock(currentX, currentY, currentZ);
-        if (isStair(currentBlock)) {
-             int[] zOffs = {1, -1};
-             for (int dz : zOffs) {
-                 if (isValidMove(world, currentX, currentY, currentZ + dz)) {
-                     float d = Vector3.dst(currentX, currentY, currentZ + dz, target.x, target.y, target.z);
-                     if (d < bestDist) {
-                         bestDist = d;
-                         bestMove = new Vector3(currentX, currentY, currentZ + dz);
-                     }
-                 }
-             }
-        }
-
-        if (bestMove != null) {
-            targetPosition = bestMove;
-        } else {
-            patrol(world); // Fallback
-        }
+        pickSmartMove(world, target);
     }
 
     private void patrol(GridWorld world) {

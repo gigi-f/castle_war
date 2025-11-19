@@ -74,7 +74,9 @@ public class GridRenderer {
             case DIRT:
                 return new Color(0.6f, 0.4f, 0.2f, 1);
             case STONE:
-                return new Color(0.2f, 0.4f, 0.8f, 1); // Water/Moat
+                return new Color(0.5f, 0.5f, 0.5f, 1); // Stone gray
+            case WATER:
+                return new Color(0.2f, 0.4f, 0.8f, 0.8f); // Water blue
             case CASTLE_WHITE:
                 return new Color(0.95f, 0.95f, 0.95f, 1);
             case CASTLE_BLACK:

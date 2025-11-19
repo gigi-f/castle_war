@@ -25,6 +25,9 @@ public class King extends Unit {
 
     @Override
     public void update(float delta, GridWorld world) {
+        checkEnvironment(world);
+        if (hp <= 0) return;
+
         if (targetPosition != null) {
             // Move towards target
             float speed = 2f;
@@ -46,38 +49,22 @@ public class King extends Unit {
         }
     }
 
+    private Vector3 patrolTarget;
+
     private void pickNewTarget(GridWorld world) {
-        // Try to find a valid adjacent block (including stairs up/down)
-        int currentX = Math.round(position.x);
-        int currentY = Math.round(position.y);
-        int currentZ = Math.round(position.z);
-
-        // Simple random walk for now
-        int dx = MathUtils.random(-1, 1);
-        int dy = MathUtils.random(-1, 1);
-        
-        // Don't move diagonally for now to keep it simple
-        if (dx != 0 && dy != 0) dy = 0;
-        if (dx == 0 && dy == 0) return;
-
-        int newX = currentX + dx;
-        int newY = currentY + dy;
-        int newZ = currentZ;
-
-        // Check if valid move (including hop)
-        Vector3 target = getValidMoveTarget(world, newX, newY, newZ);
-        if (target != null) {
-            targetPosition = target;
-        } else {
-            // Try changing floors if on stairs
-            GridWorld.BlockState currentBlock = world.getBlock(currentX, currentY, currentZ);
-            if (isStair(currentBlock)) {
-                // 50% chance to go up or down if possible
-                int dz = MathUtils.randomSign();
-                if (isValidMove(world, currentX, currentY, currentZ + dz)) {
-                    targetPosition = new Vector3(currentX, currentY, currentZ + dz);
-                }
+        if (patrolTarget == null || position.dst(patrolTarget) < 2f) {
+            // Pick new random target in the world
+            int rx = MathUtils.random(1, world.getWidth() - 2);
+            int ry = MathUtils.random(1, world.getDepth() - 2);
+            int rz = MathUtils.random(0, world.getHeight() - 1);
+            // Ensure target is valid floor
+            if (world.getBlock(rx, ry, rz) != GridWorld.BlockState.AIR) { // Simple check
+                 patrolTarget = new Vector3(rx, ry, rz);
             }
+        }
+        
+        if (patrolTarget != null) {
+            pickSmartMove(world, patrolTarget);
         }
     }
 }
