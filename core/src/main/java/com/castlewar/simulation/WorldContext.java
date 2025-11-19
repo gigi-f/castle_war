@@ -254,6 +254,28 @@ public class WorldContext {
         }
     }
 
+    private void buildSouthTurretWall(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y1 = startY + r; // southernmost turret Y coordinate
+        int wallY = y1 - 4; // place wall south of turret openings
+        int wallThickness = 5;
+
+        // Build wall across the southern side between the two turrets
+        for (int y = wallY - wallThickness/2; y <= wallY + wallThickness/2; y++) {
+            for (int x = x1; x <= x2; x++) {
+                for (int z = 0; z < layout.battlementLevel; z++) {
+                    gridWorld.setBlock(x, y, z, layout.wallType);
+                }
+                // Battlements pattern
+                if ((x + y) % 2 == 0) {
+                    gridWorld.setBlock(x, y, layout.battlementLevel, layout.wallType);
+                }
+            }
+        }
+    }
+
     private void buildMultiLevelCastle(CastleLayout layout, int startX, int startY) {
         GridWorld.BlockState floorType = getFloorType(layout.wallType);
         GridWorld.BlockState stairType = getStairType(layout.wallType);
@@ -274,8 +296,10 @@ public class WorldContext {
         // NE (x2, y2) -> Face West (2)
         buildSpiralStaircase(layout, x2, y2, stairType, 2);
 
-        // Build Front Wall connecting the front towers
+        // Build all required perimeter walls
         buildFrontWall(layout, startX, startY);
+        // Connect southernmost turrets with a wall south of their openings
+        buildSouthTurretWall(layout, startX, startY);
     }
 
     private void buildFrontWall(CastleLayout layout, int startX, int startY) {
