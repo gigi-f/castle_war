@@ -164,6 +164,95 @@ public abstract class Unit extends Entity {
         }
     }
 
+    // Physics fields
+    protected float speed = 4f;
+    protected float gravity = 30f;
+    protected boolean onGround = false;
+    protected Vector3 tmp = new Vector3();
+
+    protected void applyPhysics(float delta, GridWorld world) {
+        // Apply gravity
+        velocity.z -= gravity * delta;
+        
+        // Apply velocity
+        float nextX = position.x + velocity.x * delta;
+        float nextY = position.y + velocity.y * delta;
+        float nextZ = position.z + velocity.z * delta;
+
+        // Collision Detection
+        boolean stepped = false;
+
+        // Check X
+        if (isValidPos(world, nextX, position.y, position.z)) {
+            position.x = nextX;
+        } else if (onGround && isValidPos(world, nextX, position.y, position.z + 1)) {
+            // Auto-step up
+            position.x = nextX;
+            position.z += 1;
+            stepped = true;
+        } else {
+            velocity.x = 0;
+        }
+
+        // Check Y
+        if (isValidPos(world, position.x, nextY, position.z)) {
+            position.y = nextY;
+        } else if (onGround && !stepped && isValidPos(world, position.x, nextY, position.z + 1)) {
+            // Auto-step up
+            position.y = nextY;
+            position.z += 1;
+            stepped = true;
+        } else {
+            velocity.y = 0;
+        }
+
+        // Check Z (Gravity/Jumping)
+        if (stepped) {
+            velocity.z = 0;
+            onGround = true;
+        } else {
+            if (isValidPos(world, position.x, position.y, nextZ)) {
+                position.z = nextZ;
+                onGround = false;
+            } else {
+                if (velocity.z < 0) {
+                    onGround = true;
+                    // Hit floor. Snap to the top of the block we hit.
+                    // The block we hit is at floor(nextZ).
+                    // We want to be at floor(nextZ) + 1.001f.
+                    // However, if nextZ is very close to integer, floor might be the block below.
+                    // If we are at 1.0 and nextZ is 0.9. floor(0.9) is 0. +1.001 is 1.001. Correct.
+                    position.z = (float)Math.floor(nextZ) + 1.001f;
+                    
+                    // Backup check: if still invalid, push up more
+                    if (!isValidPos(world, position.x, position.y, position.z)) {
+                         position.z += 0.1f; 
+                    }
+                    velocity.z = 0; // Stop falling
+                } else {
+                    velocity.z = 0; // Hit ceiling
+                }
+            }
+        }
+        
+        // Bounds check
+        position.x = MathUtils.clamp(position.x, 0, world.getWidth() - 1);
+        position.y = MathUtils.clamp(position.y, 0, world.getDepth() - 1);
+        position.z = MathUtils.clamp(position.z, 0, world.getHeight() - 1);
+    }
+
+    protected boolean isValidPos(GridWorld world, float x, float y, float z) {
+        int bx = Math.round(x);
+        int by = Math.round(y);
+        int bz = (int)Math.floor(z); 
+        int bzHead = (int)Math.floor(z + 1.5f);
+
+        if (world.isSolid(world.getBlock(bx, by, bz))) return false;
+        if (world.isSolid(world.getBlock(bx, by, bzHead))) return false;
+        
+        return true;
+    }
+
     protected void checkEnvironment(GridWorld world) {
         int x = Math.round(position.x);
         int y = Math.round(position.y);

@@ -92,7 +92,7 @@ public class WorldContext {
         int castleDepth = MathUtils.clamp(config.getCastleDepth(), 12, depthLimit);
 
     int levelLimit = Math.max(2, gridWorld.getHeight() - 4);
-    int castleLevels = MathUtils.clamp(config.getCastleLevels(), 2, levelLimit);
+    int castleLevels = MathUtils.clamp(config.getCastleLevels() * 3, 2, levelLimit);
     int roomFloors = Math.min(2, castleLevels);
 
         int minFootprint = Math.min(castleWidth, castleDepth);
@@ -258,33 +258,21 @@ public class WorldContext {
         GridWorld.BlockState floorType = getFloorType(layout.wallType);
         GridWorld.BlockState stairType = getStairType(layout.wallType);
 
-        buildCastle(layout, startX, startY, floorType);
-        carveCourtyardLayer(layout, startX, startY, 0, true);
+        int r = 6; // Radius of spiral shaft
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y1 = startY + r;
+        int y2 = startY + layout.height - 1 - r;
 
-        for (int level = 1; level <= layout.roofLevel; level++) {
-            if (level <= layout.interiorLevels) {
-                boolean isFloorLevel = (level - 1) % 6 == 0;
-                buildCastleLevel(layout, startX, startY, level, floorType, isFloorLevel);
-                
-                if (isFloorLevel) {
-                    carveCourtyardLayer(layout, startX, startY, level, false);
-                    buildBranchedFloors(layout, startX, startY, level, floorType);
-                }
-            } else if (level == layout.battlementLevel) {
-                buildBattlements(layout, startX, startY, level, floorType);
-            } else {
-                buildRoof(layout, startX, startY, level, floorType);
-                carveCourtyardLayer(layout, startX, startY, level, false);
-            }
-        }
-
-        buildSpiralStaircase(layout, startX, startY, stairType);
-        carveGate(layout, startX, startY, floorType); // Punch the hole
-
-        buildTurret(startX, startY, layout);
-        buildTurret(startX + layout.width - 1, startY, layout);
-        buildTurret(startX, startY + layout.height - 1, layout);
-        buildTurret(startX + layout.width - 1, startY + layout.height - 1, layout);
+        // Build 4 corner staircases
+        // SW (x1, y1) -> Face East (0)
+        buildSpiralStaircase(layout, x1, y1, stairType, 0);
+        // SE (x2, y1) -> Face West (2)
+        buildSpiralStaircase(layout, x2, y1, stairType, 2);
+        // NW (x1, y2) -> Face East (0)
+        buildSpiralStaircase(layout, x1, y2, stairType, 0);
+        // NE (x2, y2) -> Face West (2)
+        buildSpiralStaircase(layout, x2, y2, stairType, 2);
     }
 
     private void buildCastle(CastleLayout layout, int startX, int startY,
@@ -572,9 +560,7 @@ public class WorldContext {
             
     }
 
-    private void buildSpiralStaircase(CastleLayout layout, int startX, int startY, GridWorld.BlockState stairType) {
-        int centerX = startX + layout.width / 2;
-        int centerY = startY + layout.height / 2;
+    private void buildSpiralStaircase(CastleLayout layout, int centerX, int centerY, GridWorld.BlockState stairType, int orientation) {
         int radius = 6; // 12x12 shaft (13x13 actually)
         int minX = centerX - radius;
         int maxX = centerX + radius;
@@ -599,12 +585,33 @@ public class WorldContext {
             }
         }
 
-        // Ground floor entrance (South side)
+        // Ground floor entrance based on orientation
         int entranceWidth = 4;
         int entranceHeight = 5;
-        for (int x = centerX - entranceWidth/2; x <= centerX + entranceWidth/2; x++) {
-            for (int z = 1; z <= entranceHeight; z++) {
-                gridWorld.setBlock(x, minY, z, GridWorld.BlockState.AIR); // Punch hole in wall
+        
+        if (orientation == 0) { // East
+             for (int y = centerY - entranceWidth/2; y <= centerY + entranceWidth/2; y++) {
+                for (int z = 1; z <= entranceHeight; z++) {
+                    gridWorld.setBlock(maxX, y, z, GridWorld.BlockState.AIR);
+                }
+            }
+        } else if (orientation == 1) { // North
+             for (int x = centerX - entranceWidth/2; x <= centerX + entranceWidth/2; x++) {
+                for (int z = 1; z <= entranceHeight; z++) {
+                    gridWorld.setBlock(x, maxY, z, GridWorld.BlockState.AIR);
+                }
+            }
+        } else if (orientation == 2) { // West
+             for (int y = centerY - entranceWidth/2; y <= centerY + entranceWidth/2; y++) {
+                for (int z = 1; z <= entranceHeight; z++) {
+                    gridWorld.setBlock(minX, y, z, GridWorld.BlockState.AIR);
+                }
+            }
+        } else { // South (Default)
+             for (int x = centerX - entranceWidth/2; x <= centerX + entranceWidth/2; x++) {
+                for (int z = 1; z <= entranceHeight; z++) {
+                    gridWorld.setBlock(x, minY, z, GridWorld.BlockState.AIR);
+                }
             }
         }
         
@@ -619,8 +626,8 @@ public class WorldContext {
         // Floor height is 6 blocks.
         // We want 1 full revolution per floor (6 blocks rise).
         
-        for (int level = 0; level < layout.interiorLevels / 6 + 1; level++) {
-            int baseZ = level * 6;
+        for (int level = 0; level < layout.interiorLevels / 12 + 1; level++) {
+            int baseZ = level * 12;
             
             // Iterate over the annulus
             for (int x = minX + 1; x < maxX; x++) {
@@ -629,8 +636,8 @@ public class WorldContext {
                     int dy = y - centerY;
                     double dist = Math.sqrt(dx*dx + dy*dy);
                     
-                    // Path width: inner radius 2, outer radius 5
-                    if (dist >= 2 && dist <= 5.5) {
+                    // Path width: inner radius 2, extend to walls
+                if (dist >= 2) {
                         // Calculate angle (0 to 1)
                         // atan2 returns -PI to PI. 
                         // We want 0 at South (entrance) -> East -> North -> West
@@ -642,28 +649,34 @@ public class WorldContext {
                         // South (-PI/2) -> East (0) -> North (PI/2) -> West (PI).
                         
                         double angle = Math.atan2(dy, dx); // -PI to PI
-                        
-                        // Normalize so South is 0, going CCW
-                        // South is -PI/2. 
-                        // angle - (-PI/2) = angle + PI/2.
-                        // If angle < -PI/2, add 2PI.
-                        
-                        double fraction = (angle + Math.PI / 2.0) / (2 * Math.PI);
-                        if (fraction < 0) fraction += 1.0;
-                        if (fraction >= 1.0) fraction -= 1.0;
+                    
+                    // Calculate start angle based on orientation
+                    double startAngle = -Math.PI / 2.0; // South default
+                    if (orientation == 0) startAngle = 0; // East
+                    else if (orientation == 1) startAngle = Math.PI / 2.0; // North
+                    else if (orientation == 2) startAngle = Math.PI; // West
+                    
+                    // Normalize fraction based on startAngle
+                    double fraction = (angle - startAngle) / (2 * Math.PI);
+                    if (fraction < 0) fraction += 1.0;
+                    if (fraction >= 1.0) fraction -= 1.0;
                         
                         // Calculate Z height for this block
-                        int zOffset = (int)(fraction * 6);
+                        int zOffset = (int)(fraction * 12);
                         int z = baseZ + zOffset;
                         
                         if (z > layout.interiorLevels) continue;
                         
                         gridWorld.setBlock(x, y, z, stairType);
-                        
-                        // Clear headroom (5 blocks)
-                        for (int h = 1; h <= 5; h++) {
-                            gridWorld.setBlock(x, y, z + h, GridWorld.BlockState.AIR);
-                        }
+                    // Thicken the stairs to prevent gaps/falling through
+                    if (z - 1 >= 0) {
+                        gridWorld.setBlock(x, y, z - 1, stairType);
+                    }
+                    
+                    // Clear headroom (5 blocks)
+                    for (int h = 1; h <= 5; h++) {
+                        gridWorld.setBlock(x, y, z + h, GridWorld.BlockState.AIR);
+                    }
                         
                         // Check for floor connections
                         // At the start of the loop (South, fraction ~ 0), we are at baseZ.

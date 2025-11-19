@@ -43,22 +43,36 @@ public class Guard extends Unit {
         if (targetPosition != null) {
             // Move towards target
             float speed = 2.5f; // Slightly faster than King
-            Vector3 direction = new Vector3(targetPosition).sub(position).nor();
-            float distance = position.dst(targetPosition);
+            Vector3 direction = new Vector3(targetPosition).sub(position);
+            direction.z = 0; // Ignore Z for horizontal movement
+            direction.nor();
             
-            if (distance < speed * delta) {
-                position.set(targetPosition);
+            velocity.x = direction.x * speed;
+            velocity.y = direction.y * speed;
+            
+            // Check if close enough (ignoring Z for now, or check 3D?)
+            // If we are close in X/Y, we might be at the step.
+            float dst2 = Vector3.dst2(position.x, position.y, 0, targetPosition.x, targetPosition.y, 0);
+            
+            if (dst2 < 0.1f * 0.1f) { // Very close
+                // Snap to center of block? Or just clear target?
+                // If we snap, we might teleport.
+                // Let's just clear target and stop.
+                velocity.x = 0;
+                velocity.y = 0;
                 targetPosition = null;
                 moveTimer = MathUtils.random(0.5f, 2f);
-            } else {
-                position.add(direction.scl(speed * delta));
             }
         } else {
+            velocity.x = 0;
+            velocity.y = 0;
             moveTimer -= delta;
             if (moveTimer <= 0) {
                 decideNextMove(world);
             }
         }
+        
+        super.applyPhysics(delta, world);
     }
 
     private void decideNextMove(GridWorld world) {

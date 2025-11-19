@@ -31,22 +31,30 @@ public class King extends Unit {
         if (targetPosition != null) {
             // Move towards target
             float speed = 2f;
-            Vector3 direction = new Vector3(targetPosition).sub(position).nor();
-            float distance = position.dst(targetPosition);
+            Vector3 direction = new Vector3(targetPosition).sub(position);
+            direction.z = 0;
+            direction.nor();
             
-            if (distance < speed * delta) {
-                position.set(targetPosition);
+            velocity.x = direction.x * speed;
+            velocity.y = direction.y * speed;
+            
+            float dst2 = Vector3.dst2(position.x, position.y, 0, targetPosition.x, targetPosition.y, 0);
+            
+            if (dst2 < 0.1f * 0.1f) {
+                velocity.x = 0;
+                velocity.y = 0;
                 targetPosition = null;
-                moveTimer = MathUtils.random(1f, 3f); // Wait before next move
-            } else {
-                position.add(direction.scl(speed * delta));
+                moveTimer = MathUtils.random(1f, 3f);
             }
         } else {
+            velocity.x = 0;
+            velocity.y = 0;
             moveTimer -= delta;
             if (moveTimer <= 0) {
                 pickNewTarget(world);
             }
         }
+        super.applyPhysics(delta, world);
     }
 
     private Vector3 patrolTarget;

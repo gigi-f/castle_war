@@ -38,22 +38,48 @@ public class Assassin extends Unit {
         float speed = 4.0f; 
         
         if (targetPosition != null) {
-            Vector3 direction = new Vector3(targetPosition).sub(position).nor();
-            float distance = position.dst(targetPosition);
+            Vector3 direction = new Vector3(targetPosition).sub(position);
+            // Assassin can move in Z (climbing)
+            // But applyPhysics handles gravity.
+            // If we want to climb, we need velocity.z > 0.
+            // If target is higher, direction.z will be positive.
             
-            if (distance < speed * delta) {
-                position.set(targetPosition);
-                targetPosition = null;
-                moveTimer = 0.2f; // Quick decisions
+            direction.nor();
+            
+            velocity.x = direction.x * speed;
+            velocity.y = direction.y * speed;
+            
+            // If climbing (target Z > current Z), apply Z velocity
+            if (targetPosition.z > position.z + 0.1f) {
+                 velocity.z = direction.z * speed;
+                 // Counteract gravity if climbing?
+                 // If we set velocity.z every frame, it overrides gravity accumulation (mostly).
+                 // velocity.z -= gravity * delta happens in applyPhysics.
+                 // If we set velocity.z here, we are setting the "start" velocity for the frame.
+                 // So it should work.
             } else {
-                position.add(direction.scl(speed * delta));
+                 // If not climbing, let gravity do its thing?
+                 // But if we are moving horizontally, we shouldn't set velocity.z to 0 unless we want to stop falling?
+                 // No, let gravity handle falling.
+                 // But if we are on ground, velocity.z is 0.
+            }
+            
+            float dst2 = position.dst2(targetPosition);
+            
+            if (dst2 < 0.1f * 0.1f) {
+                velocity.set(0,0,0);
+                targetPosition = null;
+                moveTimer = 0.2f; 
             }
         } else {
+            velocity.set(0,0,0);
             moveTimer -= delta;
             if (moveTimer <= 0) {
                 decideNextMove(world);
             }
         }
+        
+        super.applyPhysics(delta, world);
         
         // Stuck detection
         if (position.dst(lastPosition) < 0.1f * delta) {

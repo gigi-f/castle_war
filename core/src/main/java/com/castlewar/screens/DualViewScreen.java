@@ -1695,15 +1695,21 @@ public class DualViewScreen implements Screen {
     }
 
     private void renderFirstPerson() {
+        // Set fog color (match background)
+        Color fogColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+        Gdx.gl.glClearColor(fogColor.r, fogColor.g, fogColor.b, 1f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
-        Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT);
         
+        fpsCamera.far = 100f; // Increase draw distance
+        fpsCamera.update();
+
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.setProjectionMatrix(fpsCamera.combined);
         sr.begin(ShapeRenderer.ShapeType.Filled);
         
         // Draw visible blocks around player
-        int range = 40;
+        int range = 80; // Increased range
         int px = (int)fpsCamera.position.x;
         int py = (int)fpsCamera.position.y;
         int pz = (int)fpsCamera.position.z;
@@ -1715,12 +1721,25 @@ public class DualViewScreen implements Screen {
         int minZ = Math.max(0, pz - range);
         int maxZ = Math.min(gridWorld.getHeight(), pz + range);
         
+        float fogStart = 20f;
+        float fogEnd = 80f;
+
         for (int x = minX; x < maxX; x++) {
             for (int y = minY; y < maxY; y++) {
                 for (int z = minZ; z < maxZ; z++) {
                     GridWorld.BlockState block = gridWorld.getBlock(x, y, z);
                     if (block != GridWorld.BlockState.AIR) {
-                        Color color = gridRenderer.getBlockColor(block);
+                        float dist = Vector3.dst(px, py, pz, x + 0.5f, y + 0.5f, z + 0.5f);
+                        
+                        // Occlusion fix: Don't render blocks too close to camera
+                        if (dist < 1.1f) continue;
+
+                        Color color = gridRenderer.getBlockColor(block).cpy();
+                        
+                        // Apply fog
+                        float fogFactor = MathUtils.clamp((dist - fogStart) / (fogEnd - fogStart), 0f, 1f);
+                        color.lerp(fogColor, fogFactor);
+                        
                         sr.setColor(color);
                         // Draw box (x, y, z is corner)
                         sr.box(x, y, z, 1, 1, 1);
@@ -1732,7 +1751,15 @@ public class DualViewScreen implements Screen {
         // Draw entities
         for (Entity entity : worldContext.getEntities()) {
             if (entity == player) continue;
-            sr.setColor(entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK);
+            
+            float dist = Vector3.dst(px, py, pz, entity.getX(), entity.getY(), entity.getZ());
+            Color color = (entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK).cpy();
+            
+            // Apply fog
+            float fogFactor = MathUtils.clamp((dist - fogStart) / (fogEnd - fogStart), 0f, 1f);
+            color.lerp(fogColor, fogFactor);
+            
+            sr.setColor(color);
             sr.box(entity.getX(), entity.getY(), entity.getZ(), 0.6f, 0.6f, 1.8f);
         }
         
