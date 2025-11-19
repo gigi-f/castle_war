@@ -568,7 +568,9 @@ public class WorldContext {
         int maxY = centerY + radius;
 
         // Build shaft walls
-        for (int z = 0; z <= layout.roofLevel; z++) {
+        // Build shaft walls
+        // Stop walls at battlementLevel - 1 so the landing can sit on top
+        for (int z = 0; z < layout.battlementLevel; z++) {
             for (int x = minX; x <= maxX; x++) {
                 gridWorld.setBlock(x, minY, z, layout.wallType);
                 gridWorld.setBlock(x, maxY, z, layout.wallType);
@@ -584,6 +586,9 @@ public class WorldContext {
                 }
             }
         }
+        
+        // Build the landing at the top
+        buildStaircaseLanding(layout, centerX, centerY, layout.battlementLevel, layout.wallType, getFloorType(layout.wallType));
 
         // Ground floor entrance based on orientation
         int entranceWidth = 4;
@@ -787,6 +792,36 @@ public class WorldContext {
                 // Clear air (5 blocks)
                 for (int h = 1; h <= 5; h++) {
                     gridWorld.setBlock(x, y, z+h, GridWorld.BlockState.AIR);
+                }
+            }
+        }
+    }
+
+    private void buildStaircaseLanding(CastleLayout layout, int centerX, int centerY, int z, 
+                                     GridWorld.BlockState wallType, GridWorld.BlockState floorType) {
+        int landingRadius = 8; // Wider than shaft (6)
+        
+        for (int x = centerX - landingRadius; x <= centerX + landingRadius; x++) {
+            for (int y = centerY - landingRadius; y <= centerY + landingRadius; y++) {
+                double dist = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                
+                if (dist <= landingRadius) {
+                    // Floor
+                    gridWorld.setBlock(x, y, z, floorType);
+                    
+                    // Clear air above
+                    for(int h=1; h<=4; h++) gridWorld.setBlock(x, y, z+h, GridWorld.BlockState.AIR);
+
+                    // Battlements
+                    if (dist >= landingRadius - 1) {
+                        // Crenellations
+                        // Simple logic: solid block if (x+y) is even
+                        boolean isMerlon = ((x + y) % 2 == 0);
+                        
+                        if (isMerlon) {
+                            gridWorld.setBlock(x, y, z + 1, wallType);
+                        }
+                    }
                 }
             }
         }

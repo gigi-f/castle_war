@@ -22,6 +22,7 @@ public class DesktopLauncher {
         primaryConfig.setForegroundFPS(60);
         primaryConfig.useVsync(true);
         primaryConfig.setResizable(true);
+
         Lwjgl3Application app = new Lwjgl3Application(
             new CastleWarGame(sharedContext, DualViewScreen.Options.primaryWindow()),
             primaryConfig
