@@ -278,6 +278,26 @@ public class WorldContext {
                 }
             }
         }
+        
+        // Add archer windows on the outer (south) face at the second level
+        // Windows are spaced every 5 blocks
+        int windowSpacing = 5;
+        
+        for (int x = wallStartX + 2; x <= wallEndX - 2; x += windowSpacing) {
+            // Window structure:
+            // Z=12: walkway floor (already built)
+            // Z=13: railing (1 block high wall - prevents accidental falls)
+            // Z=14-15: air opening (2 blocks high - archer shooting position)
+            // Z=16+: continues as normal wall
+            
+            // Cut the window through the ENTIRE wall thickness
+            for (int y = wallY - wallThickness/2; y <= wallY + wallThickness/2; y++) {
+                // Keep the railing at Z=13
+                // Clear Z=14 and Z=15 for the window opening
+                gridWorld.setBlock(x, y, 14, GridWorld.BlockState.AIR);
+                gridWorld.setBlock(x, y, 15, GridWorld.BlockState.AIR);
+            }
+        }
     }
 
     private void buildSouthWalkway(CastleLayout layout, int startX, int startY) {
