@@ -727,17 +727,32 @@ public class WorldContext {
                 }
             }
             
-            // Ensure the South doorway is open at floor level
+            // Ensure the doorway is open at floor level, aligned with orientation
             if (level > 0) {
-                 // Punch hole in South wall of shaft
-                 for (int w = -2; w <= 2; w++) {
-                     int px = centerX + w;
-                     int py = minY; // South wall
-                     // Ensure floor exists at threshold
-                     gridWorld.setBlock(px, py, baseZ, GridWorld.BlockState.CASTLE_WHITE_FLOOR);
-                     // Clear air
-                     for(int h=1; h<=5; h++) gridWorld.setBlock(px, py, baseZ+h, GridWorld.BlockState.AIR);
-                 }
+                int entranceW = 4;
+                GridWorld.BlockState floorType = getFloorType(layout.wallType);
+                
+                if (orientation == 0) { // East
+                    for (int y = centerY - entranceW/2; y <= centerY + entranceW/2; y++) {
+                        gridWorld.setBlock(maxX, y, baseZ, floorType);
+                        for(int h=1; h<=5; h++) gridWorld.setBlock(maxX, y, baseZ+h, GridWorld.BlockState.AIR);
+                    }
+                } else if (orientation == 1) { // North
+                    for (int x = centerX - entranceW/2; x <= centerX + entranceW/2; x++) {
+                        gridWorld.setBlock(x, maxY, baseZ, floorType);
+                        for(int h=1; h<=5; h++) gridWorld.setBlock(x, maxY, baseZ+h, GridWorld.BlockState.AIR);
+                    }
+                } else if (orientation == 2) { // West
+                    for (int y = centerY - entranceW/2; y <= centerY + entranceW/2; y++) {
+                        gridWorld.setBlock(minX, y, baseZ, floorType);
+                        for(int h=1; h<=5; h++) gridWorld.setBlock(minX, y, baseZ+h, GridWorld.BlockState.AIR);
+                    }
+                } else { // South
+                    for (int x = centerX - entranceW/2; x <= centerX + entranceW/2; x++) {
+                        gridWorld.setBlock(x, minY, baseZ, floorType);
+                        for(int h=1; h<=5; h++) gridWorld.setBlock(x, minY, baseZ+h, GridWorld.BlockState.AIR);
+                    }
+                }
             }
         }
     }
