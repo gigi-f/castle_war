@@ -263,8 +263,12 @@ public class WorldContext {
         int wallThickness = 5;
 
         // Build wall across the southern side between the two turrets
+        // Start at the outer face of the left turret and end at the outer face of the right turret
+        int wallStartX = x1 + r; // Right edge of left turret
+        int wallEndX = x2 - r;   // Left edge of right turret
+        
         for (int y = wallY - wallThickness/2; y <= wallY + wallThickness/2; y++) {
-            for (int x = x1; x <= x2; x++) {
+            for (int x = wallStartX; x <= wallEndX; x++) {
                 for (int z = 0; z < layout.battlementLevel; z++) {
                     gridWorld.setBlock(x, y, z, layout.wallType);
                 }
