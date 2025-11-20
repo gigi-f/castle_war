@@ -300,6 +300,52 @@ public class WorldContext {
         }
     }
 
+    private void buildNorthernWall(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y2 = startY + layout.height - 1 - r; // northernmost turret Y coordinate
+        int wallY = y2 + 4; // place wall north of turret openings
+        int wallThickness = 5;
+
+        // Build wall across the northern side between the two turrets
+        // Start at the outer face of the left turret and end at the outer face of the right turret
+        int wallStartX = x1 + r; // Right edge of left turret
+        int wallEndX = x2 - r;   // Left edge of right turret
+        
+        for (int y = wallY - wallThickness/2; y <= wallY + wallThickness/2; y++) {
+            for (int x = wallStartX; x <= wallEndX; x++) {
+                for (int z = 0; z < layout.battlementLevel; z++) {
+                    gridWorld.setBlock(x, y, z, layout.wallType);
+                }
+                // Battlements pattern
+                if ((x + y) % 2 == 0) {
+                    gridWorld.setBlock(x, y, layout.battlementLevel, layout.wallType);
+                }
+            }
+        }
+        
+        // Add archer windows on the outer (north) face at the second level
+        // Windows are spaced every 5 blocks
+        int windowSpacing = 5;
+        
+        for (int x = wallStartX + 2; x <= wallEndX - 2; x += windowSpacing) {
+            // Window structure:
+            // Z=12: walkway floor (already built)
+            // Z=13: railing (1 block high wall - prevents accidental falls)
+            // Z=14-15: air opening (2 blocks high - archer shooting position)
+            // Z=16+: continues as normal wall
+            
+            // Cut the window through the ENTIRE wall thickness
+            for (int y = wallY - wallThickness/2; y <= wallY + wallThickness/2; y++) {
+                // Keep the railing at Z=13
+                // Clear Z=14 and Z=15 for the window opening
+                gridWorld.setBlock(x, y, 14, GridWorld.BlockState.AIR);
+                gridWorld.setBlock(x, y, 15, GridWorld.BlockState.AIR);
+            }
+        }
+    }
+
     private void buildSouthWalkway(CastleLayout layout, int startX, int startY) {
         int r = 6;
         int x1 = startX + r;
@@ -334,6 +380,36 @@ public class WorldContext {
         }
     }
 
+    private void buildNorthWalkway(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y2 = startY + layout.height - 1 - r;
+        
+        // Second level is at z=12
+        int walkwayZ = 12;
+        int walkwayWidth = 3;
+        
+        // Walkway runs along the north side, connecting the doors
+        int walkwayY = y2 + 2; // Position the walkway just north of the turret centers
+        
+        GridWorld.BlockState floorType = getFloorType(layout.wallType);
+        
+        // Build the walkway floor from turret to turret
+        int walkwayStartX = x1 + r; // Right edge of left turret
+        int walkwayEndX = x2 - r;   // Left edge of right turret
+        
+        for (int x = walkwayStartX; x <= walkwayEndX; x++) {
+            for (int y = walkwayY - walkwayWidth/2; y <= walkwayY + walkwayWidth/2; y++) {
+                gridWorld.setBlock(x, y, walkwayZ, floorType);
+                // Clear space above for headroom
+                for (int clearZ = walkwayZ + 1; clearZ < walkwayZ + 6; clearZ++) {
+                    gridWorld.setBlock(x, y, clearZ, GridWorld.BlockState.AIR);
+                }
+            }
+        }
+    }
+
     private void buildMultiLevelCastle(CastleLayout layout, int startX, int startY) {
         GridWorld.BlockState floorType = getFloorType(layout.wallType);
         GridWorld.BlockState stairType = getStairType(layout.wallType);
@@ -356,6 +432,12 @@ public class WorldContext {
 
         // Build all required perimeter walls
         buildFrontWall(layout, startX, startY);
+        // Build rear wall (opposite side from front, no gate)
+        buildRearWall(layout, startX, startY);
+        // Build northern wall connecting the northern towers
+        buildNorthernWall(layout, startX, startY);
+        // Add northern walkway
+        buildNorthWalkway(layout, startX, startY);
         // Connect southernmost turrets with a wall south of their openings
         buildSouthTurretWall(layout, startX, startY);
         // Add second-level walkway connecting the south turrets
@@ -403,6 +485,37 @@ public class WorldContext {
                 }
             }
         }
+    }
+
+    private void buildRearWall(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y1 = startY + r;
+        int y2 = startY + layout.height - 1 - r;
+        
+        // Rear wall is on opposite side from front wall
+        int wallX = layout.gateOnRight ? x1 : x2;
+        int wallThickness = 5;
+        
+        // Connect the towers - same Y range as front wall
+        int wallStartY = y1 + 4;
+        int wallEndY = y2 - 4;
+        
+        // Build Wall
+        for (int x = wallX - wallThickness/2; x <= wallX + wallThickness/2; x++) {
+            for (int y = wallStartY; y <= wallEndY; y++) {
+                for (int z = 0; z < layout.battlementLevel; z++) {
+                    gridWorld.setBlock(x, y, z, layout.wallType);
+                }
+                // Battlements
+                if ((x + y) % 2 == 0) {
+                    gridWorld.setBlock(x, y, layout.battlementLevel, layout.wallType);
+                }
+            }
+        }
+        
+        // No archway on rear wall - it's solid for defense
     }
 
     private void buildCastle(CastleLayout layout, int startX, int startY,
