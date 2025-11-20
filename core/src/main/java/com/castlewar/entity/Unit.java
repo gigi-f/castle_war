@@ -3,6 +3,13 @@ package com.castlewar.entity;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.MathUtils;
 import com.castlewar.world.GridWorld;
+import java.util.PriorityQueue;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Collections;
 
 public abstract class Unit extends Entity {
     protected String name;
@@ -11,6 +18,7 @@ public abstract class Unit extends Entity {
     protected float stamina;
     protected float maxStamina;
     protected Vector3 targetPosition;
+    protected List<Vector3> currentPath = new ArrayList<>();
 
     public Unit(float x, float y, float z, Team team, String name, float maxHp, float maxStamina) {
         super(x, y, z, team);
@@ -101,66 +109,154 @@ public abstract class Unit extends Entity {
                 block == GridWorld.BlockState.CASTLE_BLACK_FLOOR;
     }
 
+    // Combat stats
+    protected float attackTimer = 0f;
+    protected float attackDamage = 10f;
+    protected float attackRange = 1.5f;
+    protected float attackCooldown = 1.0f;
+
+    public void takeDamage(float amount) {
+        hp -= amount;
+        if (hp < 0) hp = 0;
+    }
+
+    public boolean isDead() {
+        return hp <= 0;
+    }
+    
+    public void attack(Unit target) {
+        if (attackTimer <= 0 && !isDead() && !target.isDead()) {
+            target.takeDamage(attackDamage);
+            attackTimer = attackCooldown;
+        }
+    }
+
     public void pickSmartMove(GridWorld world, Vector3 target) {
-        int cx = Math.round(position.x);
-        int cy = Math.round(position.y);
-        int cz = Math.round(position.z);
-
-        // 1. Try to climb if target is above
-        if (target.z > position.z) {
-            // Look for neighbors that go UP
-            int[][] offsets = {{1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {1,-1}, {-1,1}, {-1,-1}};
-            for (int[] off : offsets) {
-                int nx = cx + off[0];
-                int ny = cy + off[1];
-                // Check for z+1 move
-                Vector3 move = getValidMoveTarget(world, nx, ny, cz); // This handles the hop check internally?
-                // Wait, getValidMoveTarget(x,y,z) checks if we can move to (x,y,z) OR (x,y,z+1).
-                // If it returns z+1, that's a climb!
-                
-                if (move != null && move.z > position.z) {
-                    // Found a step up! Take it immediately.
-                    targetPosition = move;
-                    return;
-                }
-            }
+        // If we have a path, follow it
+        if (currentPath != null && !currentPath.isEmpty()) {
+             Vector3 next = currentPath.get(0);
+             // Check if the next step is still valid/adjacent
+             if (position.dst(next) < 2.5f) {
+                 targetPosition = next;
+                 currentPath.remove(0);
+                 return;
+             } else {
+                 // Path invalid (too far or teleported), recalculate
+                 if (currentPath != null) currentPath.clear();
+             }
         }
-
-        // 2. Standard greedy movement (with stuck avoidance)
-        float bestDist = Float.MAX_VALUE;
-        Vector3 bestMove = null;
         
-        int[][] offsets = {{1,0}, {-1,0}, {0,1}, {0,-1}};
-        // Shuffle offsets to avoid bias
-        for (int i = 0; i < offsets.length; i++) {
-            int ii = MathUtils.random(offsets.length - 1);
-            int[] temp = offsets[i];
-            offsets[i] = offsets[ii];
-            offsets[ii] = temp;
+        // Calculate new path
+        currentPath = findPath(world, position, target);
+        if (currentPath != null && !currentPath.isEmpty()) {
+             targetPosition = currentPath.get(0);
+             currentPath.remove(0);
         }
+    }
 
-        for (int[] off : offsets) {
-            int nx = cx + off[0];
-            int ny = cy + off[1];
-            Vector3 move = getValidMoveTarget(world, nx, ny, cz);
+    private List<Vector3> findPath(GridWorld world, Vector3 start, Vector3 end) {
+        PriorityQueue<Node> openSet = new PriorityQueue<>(Comparator.comparingDouble(Node::f));
+        Set<Node> closedSet = new HashSet<>();
+        
+        int sx = Math.round(start.x);
+        int sy = Math.round(start.y);
+        int sz = Math.round(start.z);
+        int ex = Math.round(end.x);
+        int ey = Math.round(end.y);
+        int ez = Math.round(end.z);
+        
+        Node startNode = new Node(sx, sy, sz, 0, Vector3.dst(sx, sy, sz, ex, ey, ez), null);
+        openSet.add(startNode);
+        
+        int iterations = 0;
+        int maxIterations = 5000; // Increased limit for larger maps
+        
+        Node bestNode = startNode;
+        float bestDist = startNode.h;
+        
+        while (!openSet.isEmpty() && iterations < maxIterations) {
+            Node current = openSet.poll();
+            iterations++;
             
-            if (move != null) {
-                float d = Vector3.dst(move.x, move.y, move.z, target.x, target.y, target.z);
-                // If on stairs, relax distance constraint to allow moving around the spiral
-                if (target.z != position.z) {
-                     d *= 0.9f; // Bias towards moving even if distance is slightly worse? 
-                     // No, that doesn't help with local minima.
-                }
+            if (current.x == ex && current.y == ey && Math.abs(current.z - ez) <= 1) {
+                return reconstructPath(current);
+            }
+            
+            if (closedSet.contains(current)) continue;
+            closedSet.add(current);
+            
+            if (current.h < bestDist) {
+                bestDist = current.h;
+                bestNode = current;
+            }
+            
+            // Neighbors
+            // 1. Horizontal/Diagonal
+            int[][] offsets = {{1,0}, {-1,0}, {0,1}, {0,-1}};
+            for (int[] off : offsets) {
+                int nx = current.x + off[0];
+                int ny = current.y + off[1];
+                Vector3 move = getValidMoveTarget(world, nx, ny, current.z);
                 
-                if (d < bestDist) {
-                    bestDist = d;
-                    bestMove = move;
+                if (move != null) {
+                    float g = current.g + Vector3.dst(current.x, current.y, current.z, move.x, move.y, move.z);
+                    float h = Vector3.dst(move.x, move.y, move.z, ex, ey, ez);
+                    openSet.add(new Node((int)move.x, (int)move.y, (int)move.z, g, h, current));
+                }
+            }
+            
+            // 2. Climbing (Vertical)
+            if (canClimb && isAdjacentToWall(world, current.x, current.y, current.z)) {
+                if (isValidMove(world, current.x, current.y, current.z + 1)) {
+                    float g = current.g + 1;
+                    float h = Vector3.dst(current.x, current.y, current.z + 1, ex, ey, ez);
+                    openSet.add(new Node(current.x, current.y, current.z + 1, g, h, current));
                 }
             }
         }
         
-        if (bestMove != null) {
-            targetPosition = bestMove;
+        // If path not found, return path to best node (closest to target)
+        if (bestNode != startNode) {
+            return reconstructPath(bestNode);
+        }
+        
+        return null;
+    }
+    
+    private List<Vector3> reconstructPath(Node node) {
+        List<Vector3> path = new ArrayList<>();
+        while (node.parent != null) {
+            path.add(new Vector3(node.x, node.y, node.z));
+            node = node.parent;
+        }
+        Collections.reverse(path);
+        return path;
+    }
+    
+    private static class Node {
+        int x, y, z;
+        float g, h;
+        Node parent;
+        
+        Node(int x, int y, int z, float g, float h, Node parent) {
+            this.x = x; this.y = y; this.z = z;
+            this.g = g; this.h = h;
+            this.parent = parent;
+        }
+        
+        float f() { return g + h; }
+        
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Node)) return false;
+            Node n = (Node)o;
+            return x == n.x && y == n.y && z == n.z;
+        }
+        
+        @Override
+        public int hashCode() {
+            return x * 31 * 31 + y * 31 + z;
         }
     }
 
@@ -287,5 +383,23 @@ public abstract class Unit extends Entity {
         
         // Fall damage or void death?
         if (z < 0) hp = 0;
+    }
+
+    protected Unit targetEnemy;
+
+    public void scanForEnemies(java.util.List<Entity> entities) {
+        float closestDist = 10f; // Vision range
+        Unit closest = null;
+        
+        for (Entity e : entities) {
+            if (e instanceof Unit && e.getTeam() != this.team && !((Unit)e).isDead()) {
+                float d = position.dst(e.getPosition());
+                if (d < closestDist) {
+                     closestDist = d;
+                     closest = (Unit)e;
+                }
+            }
+        }
+        targetEnemy = closest;
     }
 }

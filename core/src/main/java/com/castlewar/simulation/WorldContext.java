@@ -1,10 +1,12 @@
 package com.castlewar.simulation;
 
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector3;
 import com.castlewar.entity.Assassin;
 import com.castlewar.entity.Entity;
 import com.castlewar.entity.Guard;
 import com.castlewar.entity.King;
+import com.castlewar.entity.Streaker;
 import com.castlewar.entity.Team;
 import com.castlewar.world.GridWorld;
 import java.util.ArrayList;
@@ -209,12 +211,19 @@ public class WorldContext {
     }
 
     public void update(float delta) {
+        // Update AI and Physics
         for (Entity entity : entities) {
+            if (entity instanceof com.castlewar.entity.Unit) {
+                ((com.castlewar.entity.Unit) entity).scanForEnemies(entities);
+            }
             if (entity instanceof Assassin) {
                 ((Assassin) entity).checkForGuards(entities, gridWorld);
             }
             entity.update(delta, gridWorld);
         }
+        
+        // Remove dead entities
+        entities.removeIf(e -> e instanceof com.castlewar.entity.Unit && ((com.castlewar.entity.Unit)e).isDead());
     }
 
     public List<Entity> getEntities() {
@@ -293,7 +302,7 @@ public class WorldContext {
 
             float assassinX = (team == Team.WHITE) ? battlefieldStartX + 5 : battlefieldEndX - 5;
             float assassinY = startY + layout.height / 2f;
-            float assassinZ = 0; // Ground level
+            float assassinZ = 1; // Spawn at ground level (z=1, same as King)
             Assassin assassin = new Assassin(assassinX, assassinY, assassinZ, team);
             entities.add(assassin);
         }
@@ -311,10 +320,35 @@ public class WorldContext {
         for (Entity e : entities) {
             if (e instanceof Assassin) {
                 Assassin a = (Assassin)e;
-                if (a.getTeam() == Team.WHITE) a.setTargetKing(blackKing);
-                else a.setTargetKing(whiteKing);
+                if (a.getTeam() == Team.WHITE) {
+                    a.setTargetKing(blackKing);
+                    // Target Right Castle Gate (Bridge Start)
+                    // Right Castle starts at rightStartX. Gate is on Left side (facing center).
+                    // Bridge starts at rightStartX - 1.
+                    float gateX = rightStartX - 1; 
+                    float gateY = rightStartY + rightLayout.height / 2f;
+                    a.setInfiltrationTarget(new Vector3(gateX, gateY, 0));
+                } else {
+                    a.setTargetKing(whiteKing);
+                    // Target Left Castle Gate (Bridge Start)
+                    // Left Castle starts at leftStartX. Gate is on Right side (facing center).
+                    // Bridge starts at leftStartX + width.
+                    float gateX = leftStartX + leftLayout.width;
+                    float gateY = leftStartY + leftLayout.height / 2f;
+                    a.setInfiltrationTarget(new Vector3(gateX, gateY, 0));
+                }
             }
         }
+        
+        // Spawn Streaker (Debug)
+        float midX = worldWidth / 2f;
+        float midY = centerY;
+        // Targets: Bridge entrances
+        Vector3 leftT = new Vector3(leftStartX + leftLayout.width, leftStartY + leftLayout.height/2f, 0);
+        Vector3 rightT = new Vector3(rightStartX - 1, rightStartY + rightLayout.height/2f, 0);
+        
+        // Streaker streaker = new Streaker(midX, midY, 10, Team.WHITE, leftT, rightT);
+        // entities.add(streaker);
     }
 
     private void buildSouthTurretWall(CastleLayout layout, int startX, int startY) {

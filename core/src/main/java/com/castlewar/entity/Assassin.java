@@ -10,7 +10,7 @@ public class Assassin extends Unit {
     
     private Entity targetKing;
     private float moveTimer = 0f;
-    private Vector3 targetPosition = null;
+    // targetPosition is inherited from Unit - don't redeclare it!
     private boolean isFleeing = false;
 
     public Assassin(float x, float y, float z, Team team) {
@@ -34,15 +34,11 @@ public class Assassin extends Unit {
         checkEnvironment(world);
         if (hp <= 0) return;
 
-        // Assassins are fast
-        float speed = 4.0f; 
+        // Assassins are very fast - 2x speed
+        float speed = 8.0f; 
         
         if (targetPosition != null) {
             Vector3 direction = new Vector3(targetPosition).sub(position);
-            // Assassin can move in Z (climbing)
-            // But applyPhysics handles gravity.
-            // If we want to climb, we need velocity.z > 0.
-            // If target is higher, direction.z will be positive.
             
             direction.nor();
             
@@ -52,16 +48,6 @@ public class Assassin extends Unit {
             // If climbing (target Z > current Z), apply Z velocity
             if (targetPosition.z > position.z + 0.1f) {
                  velocity.z = direction.z * speed;
-                 // Counteract gravity if climbing?
-                 // If we set velocity.z every frame, it overrides gravity accumulation (mostly).
-                 // velocity.z -= gravity * delta happens in applyPhysics.
-                 // If we set velocity.z here, we are setting the "start" velocity for the frame.
-                 // So it should work.
-            } else {
-                 // If not climbing, let gravity do its thing?
-                 // But if we are moving horizontally, we shouldn't set velocity.z to 0 unless we want to stop falling?
-                 // No, let gravity handle falling.
-                 // But if we are on ground, velocity.z is 0.
             }
             
             float dst2 = position.dst2(targetPosition);
@@ -81,7 +67,8 @@ public class Assassin extends Unit {
         
         super.applyPhysics(delta, world);
         
-        // Stuck detection
+        // Stuck detection - Disabled for now as it might interfere with A*
+        /*
         if (position.dst(lastPosition) < 0.1f * delta) {
             stuckTimer += delta;
         } else {
@@ -94,22 +81,51 @@ public class Assassin extends Unit {
             pickRandomMove(world);
             stuckTimer = 0f;
         }
+        */
 
-        // Check for kill
-        if (targetKing != null && position.dst(targetKing.getPosition()) < 1.5f) {
-            // Kamikaze Strike!
-            // TODO: Implement damage/kill logic
+        // Attack logic
+        if (attackTimer > 0) {
+            attackTimer -= delta;
+        }
+
+        // Check for kill (King)
+        if (targetKing != null && targetKing instanceof Unit && !((Unit)targetKing).isDead() && position.dst(targetKing.getPosition()) < attackRange) {
+             attack((Unit)targetKing);
+        }
+        
+        // Check for nearby guards to attack if they are close
+        if (attackTimer <= 0 && targetEnemy != null && !targetEnemy.isDead()) {
+             if (position.dst(targetEnemy.getPosition()) < attackRange) {
+                 attack(targetEnemy);
+             }
         }
     }
     
     public void checkForGuards(List<Entity> entities, GridWorld world) {
-        // If close to King, ignore guards (Kamikaze)
+        // If close to King, ignore everything (Kamikaze)
         if (targetKing != null && position.dst(targetKing.getPosition()) < 10f) {
             isFleeing = false;
             return;
         }
 
         isFleeing = false;
+        
+        // Check for other Assassins - they recognize each other as threats
+        for (Entity e : entities) {
+            if (e instanceof Assassin && e != this) {
+                float dist = position.dst(e.getPosition());
+                if (dist < 6f) { // Detection range for other assassins
+                    if (world.hasLineOfSight(position.x, position.y, position.z + 0.5f, 
+                                           e.getX(), e.getY(), e.getZ() + 0.5f)) {
+                        isFleeing = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Original guard detection logic commented out
+        /*
         for (Entity e : entities) {
             if (e instanceof Guard && e.getTeam() != this.team) {
                 float dist = position.dst(e.getPosition());
@@ -122,16 +138,40 @@ public class Assassin extends Unit {
                 }
             }
         }
+        */
+    }
+
+    private Vector3 infiltrationTarget;
+
+    public void setInfiltrationTarget(Vector3 target) {
+        this.infiltrationTarget = target;
     }
 
     private void decideNextMove(GridWorld world) {
         if (isFleeing) {
             pickRandomMove(world);
-        } else if (targetKing != null) {
-            // Hunt King
-            pickSmartMove(world, targetKing.getPosition());
         } else {
-            pickRandomMove(world);
+            // Priority: Infiltration -> King
+            Vector3 target = null;
+            
+            if (infiltrationTarget != null) {
+                // Check if we reached infiltration target (or close to it)
+                if (position.dst(infiltrationTarget) < 5.0f) {
+                    infiltrationTarget = null; // Reached, now hunt King
+                } else {
+                    target = infiltrationTarget;
+                }
+            }
+            
+            if (target == null && targetKing != null) {
+                target = targetKing.getPosition();
+            }
+            
+            if (target != null) {
+                pickSmartMove(world, target);
+            } else {
+                pickRandomMove(world);
+            }
         }
     }
 

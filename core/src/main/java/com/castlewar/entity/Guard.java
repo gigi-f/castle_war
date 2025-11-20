@@ -72,6 +72,23 @@ public class Guard extends Unit {
             }
         }
         
+        // Combat Logic
+        if (attackTimer > 0) attackTimer -= delta;
+        
+        if (targetEnemy != null && !targetEnemy.isDead()) {
+            float dist = position.dst(targetEnemy.getPosition());
+            if (dist < attackRange) {
+                attack(targetEnemy);
+                // Stop moving to fight
+                velocity.x = 0;
+                velocity.y = 0;
+                targetPosition = null;
+            } else if (dist < 6f) {
+                // Aggro: Move towards enemy
+                targetPosition = targetEnemy.getPosition();
+            }
+        }
+        
         super.applyPhysics(delta, world);
     }
 
