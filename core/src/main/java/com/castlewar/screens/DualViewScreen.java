@@ -840,7 +840,7 @@ public class DualViewScreen implements Screen {
             for (int x = 0; x < width; x++) {
                 for (int y = 0; y < depth; y++) {
                     GridWorld.BlockState block = gridWorld.getBlock(x, y, z);
-                    if (block == GridWorld.BlockState.AIR) {
+                    if (block == GridWorld.BlockState.AIR || block == GridWorld.BlockState.MOUNTAIN_ROCK) {
                         continue;
                     }
                     Color baseColor = getBlockColor(block);
