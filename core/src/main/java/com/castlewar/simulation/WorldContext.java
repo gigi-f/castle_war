@@ -446,6 +446,33 @@ public class WorldContext {
         }
     }
 
+    private void buildSecondFloorCeiling(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y1 = startY + r;
+        int y2 = startY + layout.height - 1 - r;
+        
+        // Ceiling is just below the battlements
+        int ceilingZ = layout.battlementLevel - 1;
+        
+        // Use stair type for wooden appearance
+        GridWorld.BlockState stairType = getStairType(layout.wallType);
+        
+        // Cover the same area as the second floor
+        int ceilingStartX = x1 + r; // Right edge of left turrets
+        int ceilingEndX = x2 - r;   // Left edge of right turrets
+        
+        int ceilingStartY = y1 - 2 + 2; // Just past south walkway
+        int ceilingEndY = y2 + 2 - 2;   // Just before north walkway
+        
+        for (int x = ceilingStartX; x <= ceilingEndX; x++) {
+            for (int y = ceilingStartY; y <= ceilingEndY; y++) {
+                gridWorld.setBlock(x, y, ceilingZ, stairType);
+            }
+        }
+    }
+
     private void buildMultiLevelCastle(CastleLayout layout, int startX, int startY) {
         GridWorld.BlockState floorType = getFloorType(layout.wallType);
         GridWorld.BlockState stairType = getStairType(layout.wallType);
@@ -480,6 +507,8 @@ public class WorldContext {
         buildSouthWalkway(layout, startX, startY);
         // Build second floor connecting the walkways
         buildSecondFloor(layout, startX, startY);
+        // Add ceiling to second floor
+        buildSecondFloorCeiling(layout, startX, startY);
     }
 
     private void buildFrontWall(CastleLayout layout, int startX, int startY) {
