@@ -27,7 +27,18 @@ public class Player extends Unit {
 
     @Override
     public void update(float delta, GridWorld world) {
-        handleInput(delta);
+        checkEnvironment(world);
+        if (!beginUpdate(delta, world)) {
+            updateCamera();
+            return;
+        }
+        if (!isStunned()) {
+            handleInput(delta);
+        } else {
+            // Freeze in place during stun
+            velocity.x = 0;
+            velocity.y = 0;
+        }
         super.applyPhysics(delta, world);
         checkEnvironment(world); // Check after move
         updateCamera();
@@ -84,5 +95,10 @@ public class Player extends Unit {
         camera.direction.set(dir).nor();
         camera.up.set(0, 0, 1);
         camera.update();
+    }
+
+    @Override
+    protected float getKnockbackStrengthAgainst(Unit target) {
+        return 7.0f;
     }
 }

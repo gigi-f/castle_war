@@ -26,9 +26,15 @@ public class King extends Unit {
     @Override
     public void update(float delta, GridWorld world) {
         checkEnvironment(world);
-        if (hp <= 0) return;
+        if (!beginUpdate(delta, world)) {
+            return;
+        }
 
-        if (targetPosition != null) {
+        if (isStunned()) {
+            // Freeze during stun
+            velocity.x = 0;
+            velocity.y = 0;
+        } else if (targetPosition != null) {
             // Move towards target
             float speed = 2f;
             Vector3 direction = new Vector3(targetPosition).sub(position);
@@ -46,7 +52,7 @@ public class King extends Unit {
                 targetPosition = null;
                 moveTimer = MathUtils.random(1f, 3f);
             }
-        } else {
+        } else if (!isStunned()) {
             velocity.x = 0;
             velocity.y = 0;
             moveTimer -= delta;
@@ -74,5 +80,10 @@ public class King extends Unit {
         if (patrolTarget != null) {
             pickSmartMove(world, patrolTarget);
         }
+    }
+
+    @Override
+    protected float getKnockbackStrengthAgainst(Unit target) {
+        return 9.0f;
     }
 }

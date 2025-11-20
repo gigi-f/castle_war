@@ -6,7 +6,6 @@ import com.castlewar.entity.Assassin;
 import com.castlewar.entity.Entity;
 import com.castlewar.entity.Guard;
 import com.castlewar.entity.King;
-import com.castlewar.entity.Streaker;
 import com.castlewar.entity.Team;
 import com.castlewar.world.GridWorld;
 import java.util.ArrayList;
@@ -214,16 +213,22 @@ public class WorldContext {
         // Update AI and Physics
         for (Entity entity : entities) {
             if (entity instanceof com.castlewar.entity.Unit) {
-                ((com.castlewar.entity.Unit) entity).scanForEnemies(entities);
+                com.castlewar.entity.Unit unit = (com.castlewar.entity.Unit) entity;
+                if (!unit.isCorpse()) {
+                    unit.scanForEnemies(entities, gridWorld);
+                }
             }
             if (entity instanceof Assassin) {
-                ((Assassin) entity).checkForGuards(entities, gridWorld);
+                Assassin assassin = (Assassin) entity;
+                if (!assassin.isCorpse()) {
+                    assassin.checkForGuards(entities, gridWorld, delta);
+                }
             }
             entity.update(delta, gridWorld);
         }
         
-        // Remove dead entities
-        entities.removeIf(e -> e instanceof com.castlewar.entity.Unit && ((com.castlewar.entity.Unit)e).isDead());
+        // Remove expired corpses
+        entities.removeIf(e -> e instanceof com.castlewar.entity.Unit && ((com.castlewar.entity.Unit)e).shouldDespawn());
     }
 
     public List<Entity> getEntities() {

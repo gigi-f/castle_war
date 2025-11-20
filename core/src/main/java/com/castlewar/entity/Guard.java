@@ -16,6 +16,7 @@ public class Guard extends Unit {
     private Entity targetToFollow; // For Entourage
     private float moveTimer = 0f;
     private Vector3 targetPosition = null;
+    private Vector3 facing = new Vector3(1, 0, 0);
 
     public Guard(float x, float y, float z, Team team, GuardType type) {
         super(x, y, z, team, generateName(type), 80f, 50f);
@@ -38,9 +39,21 @@ public class Guard extends Unit {
     @Override
     public void update(float delta, GridWorld world) {
         checkEnvironment(world);
-        if (hp <= 0) return;
+        if (!beginUpdate(delta, world)) {
+            return;
+        }
 
-        if (targetPosition != null) {
+        if (velocity.len2() > 0.1f) {
+            facing.set(velocity).nor();
+            facing.z = 0; 
+            facing.nor();
+        }
+
+        if (isStunned()) {
+            // Freeze during stun
+            velocity.x = 0;
+            velocity.y = 0;
+        } else if (targetPosition != null) {
             // Move towards target
             float speed = 2.5f; // Slightly faster than King
             Vector3 direction = new Vector3(targetPosition).sub(position);
@@ -63,7 +76,7 @@ public class Guard extends Unit {
                 targetPosition = null;
                 moveTimer = MathUtils.random(0.5f, 2f);
             }
-        } else {
+        } else if (!isStunned()) {
             velocity.x = 0;
             velocity.y = 0;
             moveTimer -= delta;
@@ -72,10 +85,7 @@ public class Guard extends Unit {
             }
         }
         
-        // Combat Logic
-        if (attackTimer > 0) attackTimer -= delta;
-        
-        if (targetEnemy != null && !targetEnemy.isDead()) {
+        if (!isStunned() && targetEnemy != null && !targetEnemy.isDead()) {
             float dist = position.dst(targetEnemy.getPosition());
             if (dist < attackRange) {
                 attack(targetEnemy);
@@ -145,5 +155,50 @@ public class Guard extends Unit {
                 }
             }
         }
+    }
+
+    @Override
+    public void scanForEnemies(java.util.List<Entity> entities, GridWorld world) {
+        float closestDist = 10f; // Vision range
+        Unit closest = null;
+        
+        for (Entity e : entities) {
+            if (e instanceof Unit && e.getTeam() != this.team && !((Unit)e).isDead()) {
+                float d = position.dst(e.getPosition());
+                if (d < closestDist) {
+                    // Check FOV
+                    Vector3 toEnemy = new Vector3(e.getPosition()).sub(position);
+                    toEnemy.z = 0; 
+                    toEnemy.nor();
+                    
+                    float dot = facing.dot(toEnemy);
+                    // 120 degree FOV
+                    if (dot > 0.5f) {
+                        // Stealth check for Assassins
+                        if (e instanceof Assassin) {
+                            if (d > 6f) continue; // Reduced range
+                            if (dot < 0.8f) continue; // Reduced FOV (must be more in front)
+                        }
+
+                        // Check LOS
+                        if (world.hasLineOfSight(position.x, position.y, position.z + 1.5f, 
+                                               e.getX(), e.getY(), e.getZ() + 1.0f)) {
+                             closestDist = d;
+                             closest = (Unit)e;
+                        }
+                    } else if (d < 2.0f) {
+                        // Proximity sense
+                        closestDist = d;
+                        closest = (Unit)e;
+                    }
+                }
+            }
+        }
+        targetEnemy = closest;
+    }
+
+    @Override
+    protected float getKnockbackStrengthAgainst(Unit target) {
+        return 7.5f;
     }
 }

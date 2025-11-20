@@ -12,6 +12,13 @@ import java.util.List;
 import java.util.Collections;
 
 public abstract class Unit extends Entity {
+    private static final float DAMAGE_FLASH_DURATION = 0.5f;
+    private static final float HIT_STUN_DURATION = 0.5f;
+    private static final float CORPSE_LIFETIME = 30f;
+    private static final float KNOCKBACK_DAMPING = 4f;
+    private static final float BASE_KNOCKBACK_STRENGTH = 25f;
+    private static final float MIN_VERTICAL_RECOIL = 2.5f;
+
     protected String name;
     protected float hp;
     protected float maxHp;
@@ -115,19 +122,109 @@ public abstract class Unit extends Entity {
     protected float attackRange = 1.5f;
     protected float attackCooldown = 1.0f;
 
+    protected float damageFlashTimer = 0f;
+    protected float hitStunTimer = 0f;
+    protected float corpseTimer = 0f;
+    private boolean deathRegistered = false;
+
+    private final Vector3 knockbackImpulse = new Vector3();
+    private final Vector3 knockbackPlanarDir = new Vector3();
+    private final Vector3 lastHitDirection = new Vector3(0, 1, 0);
+    private final Vector3 corpseForward = new Vector3(0, 1, 0);
+
     public void takeDamage(float amount) {
+        takeHit(amount, null);
+    }
+
+    public void takeHit(float amount, Unit attacker) {
+        if (amount <= 0) {
+            return;
+        }
+
         hp -= amount;
-        if (hp < 0) hp = 0;
+        if (hp < 0) {
+            hp = 0;
+        }
+
+        damageFlashTimer = DAMAGE_FLASH_DURATION;
+        hitStunTimer = HIT_STUN_DURATION;
+
+        Vector3 hitDir = tmp.setZero();
+        if (attacker != null) {
+            hitDir.set(position).sub(attacker.getPosition()).nor();
+        }
+
+        if (hitDir.isZero(0.0001f)) {
+            hitDir.set(MathUtils.randomSign(), 0, 0);
+        }
+
+        float knockbackStrength = attacker != null
+            ? attacker.getKnockbackStrengthAgainst(this)
+            : getBaseKnockbackStrength();
+        applyKnockback(hitDir, knockbackStrength);
+        lastHitDirection.set(hitDir);
+
+        if (isDead() && !deathRegistered) {
+            registerDeath();
+        }
     }
 
     public boolean isDead() {
         return hp <= 0;
     }
+
+    public boolean isCorpse() {
+        return isDead();
+    }
     
     public void attack(Unit target) {
-        if (attackTimer <= 0 && !isDead() && !target.isDead()) {
-            target.takeDamage(attackDamage);
+        if (attackTimer <= 0 && !isDead() && !target.isDead() && !isStunned()) {
+            target.takeHit(attackDamage, this);
             attackTimer = attackCooldown;
+            
+            // Apply recoil to attacker
+            Vector3 recoilDir = tmp.set(position).sub(target.getPosition()).nor();
+            if (recoilDir.isZero(0.0001f)) {
+                recoilDir.set(MathUtils.randomSign(), 0, 0);
+            }
+            float recoilStrength = getKnockbackStrengthAgainst(target) * 0.6f; // 60% of attack knockback
+            applyKnockback(recoilDir, recoilStrength);
+            
+            // Apply stun to attacker
+            hitStunTimer = HIT_STUN_DURATION;
+            damageFlashTimer = DAMAGE_FLASH_DURATION * 0.5f; // Half duration flash for attacker
+        }
+    }
+
+    protected float getBaseKnockbackStrength() {
+        return BASE_KNOCKBACK_STRENGTH;
+    }
+
+    protected float getKnockbackStrengthAgainst(Unit target) {
+        return getBaseKnockbackStrength();
+    }
+
+    protected void applyKnockback(Vector3 direction, float strength) {
+        if (strength <= 0 || direction.isZero(0.0001f)) {
+            return;
+        }
+
+        Vector3 planar = knockbackPlanarDir.set(direction.x, direction.y, 0f);
+        if (planar.isZero(0.0001f)) {
+            planar.set(MathUtils.randomSign(), 0f, 0f);
+        }
+
+        planar.nor();
+
+        // Clear all horizontal velocity and set to knockback direction
+        velocity.x = planar.x * strength;
+        velocity.y = planar.y * strength;
+
+        knockbackImpulse.add(planar.x * strength, planar.y * strength, 0f);
+
+        float upwardImpulse = Math.max(MIN_VERTICAL_RECOIL, strength * 0.35f);
+        if (velocity.z < upwardImpulse) {
+            velocity.z = upwardImpulse;
         }
     }
 
@@ -266,7 +363,37 @@ public abstract class Unit extends Entity {
     protected boolean onGround = false;
     protected Vector3 tmp = new Vector3();
 
+    protected boolean beginUpdate(float delta, GridWorld world) {
+        if (attackTimer > 0) {
+            attackTimer = Math.max(0f, attackTimer - delta);
+        }
+        if (damageFlashTimer > 0) {
+            damageFlashTimer = Math.max(0f, damageFlashTimer - delta);
+        }
+        if (hitStunTimer > 0) {
+            hitStunTimer = Math.max(0f, hitStunTimer - delta);
+        }
+
+        if (isDead()) {
+            corpseTimer += delta;
+            applyCorpsePhysics(delta, world);
+            return false;
+        }
+
+        corpseTimer = 0f;
+        return true;
+    }
+
+    protected void applyCorpsePhysics(float delta, GridWorld world) {
+        velocity.x *= 0.9f;
+        velocity.y *= 0.9f;
+        applyPhysics(delta, world);
+    }
+
     protected void applyPhysics(float delta, GridWorld world) {
+        if (!knockbackImpulse.isZero(0.0001f)) {
+            velocity.add(knockbackImpulse);
+        }
         // Apply gravity
         velocity.z -= gravity * delta;
         
@@ -335,6 +462,14 @@ public abstract class Unit extends Entity {
         position.x = MathUtils.clamp(position.x, 0, world.getWidth() - 1);
         position.y = MathUtils.clamp(position.y, 0, world.getDepth() - 1);
         position.z = MathUtils.clamp(position.z, 0, world.getHeight() - 1);
+
+        if (!knockbackImpulse.isZero(0.0001f)) {
+            float decay = Math.max(0f, 1f - KNOCKBACK_DAMPING * delta);
+            knockbackImpulse.scl(decay);
+            if (knockbackImpulse.len2() < 0.01f) {
+                knockbackImpulse.setZero();
+            }
+        }
     }
 
     protected boolean isValidPos(GridWorld world, float x, float y, float z) {
@@ -383,11 +518,15 @@ public abstract class Unit extends Entity {
         
         // Fall damage or void death?
         if (z < 0) hp = 0;
+
+        if (isDead() && !deathRegistered) {
+            registerDeath();
+        }
     }
 
     protected Unit targetEnemy;
 
-    public void scanForEnemies(java.util.List<Entity> entities) {
+    public void scanForEnemies(java.util.List<Entity> entities, GridWorld world) {
         float closestDist = 10f; // Vision range
         Unit closest = null;
         
@@ -401,5 +540,39 @@ public abstract class Unit extends Entity {
             }
         }
         targetEnemy = closest;
+    }
+
+    public boolean isStunned() {
+        return hitStunTimer > 0f;
+    }
+
+    public float getDamageFlashAlpha() {
+        return MathUtils.clamp(damageFlashTimer / DAMAGE_FLASH_DURATION, 0f, 1f);
+    }
+
+    public Vector3 getCorpseForward(Vector3 out) {
+        return out.set(corpseForward);
+    }
+
+    public float getCorpseTimer() {
+        return corpseTimer;
+    }
+
+    public float getCorpseLifetime() {
+        return CORPSE_LIFETIME;
+    }
+
+    public boolean shouldDespawn() {
+        return isDead() && corpseTimer >= CORPSE_LIFETIME;
+    }
+
+    private void registerDeath() {
+        deathRegistered = true;
+        corpseTimer = 0f;
+        Vector3 planar = tmp.set(lastHitDirection.x, lastHitDirection.y, 0f);
+        if (planar.isZero(0.0001f)) {
+            planar.set(0, 1, 0);
+        }
+        corpseForward.set(planar.nor());
     }
 }

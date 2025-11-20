@@ -17,6 +17,7 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
+import java.util.ArrayList;
 import java.util.List;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
@@ -26,7 +27,9 @@ import com.castlewar.entity.Guard;
 import com.castlewar.entity.King;
 import com.castlewar.entity.Player;
 import com.castlewar.entity.Team;
+import com.castlewar.entity.Unit;
 import com.castlewar.renderer.GridRenderer;
+import com.castlewar.renderer.UnitRenderer;
 import com.castlewar.simulation.WorldContext;
 import com.castlewar.world.GridWorld;
 
@@ -76,6 +79,7 @@ public class DualViewScreen implements Screen {
     private final WorldContext worldContext;
     private final GridWorld gridWorld;
     private final GridRenderer gridRenderer;
+    private final UnitRenderer unitRenderer;
     private final SpriteBatch overlayBatch;
     private final BitmapFont overlayFont;
     private final GlyphLayout glyphLayout;
@@ -114,6 +118,14 @@ public class DualViewScreen implements Screen {
     private boolean keyIPressed;
     
     private final float blockSize = 10f;
+    private final List<Entity> fpsRenderBuffer = new ArrayList<>();
+    private final Vector3 fpsLabelPosition = new Vector3();
+    private static final Color BODY_NEUTRAL = new Color(0.82f, 0.82f, 0.86f, 1f);
+    private static final Color BODY_DARK = new Color(0.18f, 0.18f, 0.22f, 1f);
+    private static final Color WHITE_HAT_COLOR = new Color(0.95f, 0.85f, 0.15f, 1f);
+    private static final Color BLACK_HAT_COLOR = new Color(0.95f, 0.3f, 0.8f, 1f);
+    private static final Color WHITE_ACCENT_COLOR = new Color(0.2f, 0.6f, 1f, 1f);
+    private static final Color BLACK_ACCENT_COLOR = new Color(1f, 0.25f, 0.25f, 1f);
     
     // Current Z-level being viewed
     private int currentLayer;
@@ -131,15 +143,13 @@ public class DualViewScreen implements Screen {
     private boolean keyXPressed;
     private Entity selectedUnit;
     private Entity focusedUnit;
-    private boolean keyTabPressed;
-    private boolean keyEnterPressed;
-    private boolean mouseClicked;
 
     public DualViewScreen(WorldContext worldContext, Options options) {
         this.worldContext = worldContext;
         this.options = options;
         this.gridWorld = worldContext.getGridWorld();
         this.gridRenderer = new GridRenderer(blockSize);
+        this.unitRenderer = new UnitRenderer();
         this.overlayBatch = new SpriteBatch();
         
         // Generate high-res font
@@ -179,9 +189,6 @@ public class DualViewScreen implements Screen {
         sideCamera.update();
         clampSideCameraPosition();
 
-        float isoWorldWidth = (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileWidth / 2f) + blockSize * 8f;
-        float isoWorldHeight = (gridWorld.getWidth() + gridWorld.getDepth()) * (isoTileHeight / 2f)
-            + gridWorld.getHeight() * isoBlockHeight + blockSize * 8f;
         isoCamera = new OrthographicCamera();
         isoViewport = new FitViewport(100 * isoZoom, 100 * isoZoom * (Gdx.graphics.getHeight() / (float)Gdx.graphics.getWidth()), isoCamera);
         isoViewport.update(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -1423,12 +1430,25 @@ public class DualViewScreen implements Screen {
         }
         return 0f;
     }
+
+    private Color hatColorForTeam(Team team) {
+        return team == Team.WHITE ? WHITE_HAT_COLOR : BLACK_HAT_COLOR;
+    }
+
+    private Color accentColorForTeam(Team team) {
+        return team == Team.WHITE ? WHITE_ACCENT_COLOR : BLACK_ACCENT_COLOR;
+    }
+
+    private Color bodyColorForEntity(Entity entity) {
+        return entity instanceof Assassin ? BODY_DARK : BODY_NEUTRAL;
+    }
     
     private void renderEntityTopDown(Entity entity) {
         float screenX = entity.getX() * blockSize;
         float screenY = entity.getY() * blockSize;
-        float size = blockSize * 0.8f;
+        float size = blockSize * 0.9f;
         float offset = (blockSize - size) / 2f;
+        float hatHeight = size * 0.28f;
 
         ShapeRenderer sr = gridRenderer.getShapeRenderer();
         sr.begin(ShapeRenderer.ShapeType.Filled);
@@ -1445,61 +1465,64 @@ public class DualViewScreen implements Screen {
             }
         }
         
+        Color bodyColor = bodyColorForEntity(entity);
+        Color hatColor = hatColorForTeam(entity.getTeam());
+        Color accentColor = accentColorForTeam(entity.getTeam());
+
         if (entity instanceof King) {
-            // Draw King icon (Chess piece style)
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
-            sr.setColor(teamColor);
-            
-            // Base
-            sr.rect(screenX + offset, screenY + offset, size, size * 0.2f);
-            // Body
+            sr.setColor(bodyColor);
+            sr.rect(screenX + offset + size * 0.1f, screenY + offset + size * 0.15f, size * 0.8f, size * 0.5f);
+            // Royal sash
+            sr.setColor(accentColor);
+            sr.rect(screenX + offset + size * 0.25f, screenY + offset + size * 0.15f, size * 0.12f, size * 0.5f);
+            sr.rect(screenX + offset + size * 0.63f, screenY + offset + size * 0.15f, size * 0.12f, size * 0.5f);
+            // Crown band
+            sr.setColor(Color.GOLD);
+            sr.rect(screenX + offset + size * 0.05f, screenY + offset + size * 0.7f, size * 0.9f, hatHeight * 0.4f);
+            // Crown spikes in vibrant team color
+            sr.setColor(hatColor);
             sr.triangle(
-                screenX + offset + size * 0.2f, screenY + offset + size * 0.2f,
-                screenX + offset + size * 0.8f, screenY + offset + size * 0.2f,
-                screenX + offset + size * 0.5f, screenY + offset + size * 0.8f
+                screenX + offset + size * 0.2f, screenY + offset + size * 0.7f,
+                screenX + offset + size * 0.3f, screenY + offset + size,
+                screenX + offset + size * 0.4f, screenY + offset + size * 0.7f
             );
-            // Cross
-            sr.rectLine(
-                screenX + offset + size * 0.5f, screenY + offset + size * 0.7f,
-                screenX + offset + size * 0.5f, screenY + offset + size,
-                2f
+            sr.triangle(
+                screenX + offset + size * 0.6f, screenY + offset + size * 0.7f,
+                screenX + offset + size * 0.7f, screenY + offset + size,
+                screenX + offset + size * 0.8f, screenY + offset + size * 0.7f
             );
-            sr.rectLine(
-                screenX + offset + size * 0.3f, screenY + offset + size * 0.85f,
-                screenX + offset + size * 0.7f, screenY + offset + size * 0.85f,
-                2f
-            );
+            // Jewel highlight
+            sr.setColor(accentColor);
+            sr.circle(screenX + blockSize/2f, screenY + offset + size * 0.82f, size * 0.08f);
         } else if (entity instanceof Guard) {
-            // Guard icon (Shield)
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.LIGHT_GRAY : Color.DARK_GRAY;
-            sr.setColor(teamColor);
-            
-            // Shield shape
-            sr.rect(screenX + offset + size*0.2f, screenY + offset + size*0.4f, size*0.6f, size*0.5f);
+            sr.setColor(bodyColor);
+            sr.rect(screenX + offset + size * 0.15f, screenY + offset + size * 0.2f, size * 0.7f, size * 0.45f);
+            sr.setColor(accentColor);
+            sr.rect(screenX + offset + size * 0.45f, screenY + offset + size * 0.25f, size * 0.1f, size * 0.35f);
+            // Helmet plume / hat
+            sr.setColor(hatColor);
+            sr.rect(screenX + offset + size * 0.2f, screenY + offset + size * 0.65f, size * 0.6f, hatHeight * 0.5f);
             sr.triangle(
-                screenX + offset + size*0.2f, screenY + offset + size*0.4f,
-                screenX + offset + size*0.8f, screenY + offset + size*0.4f,
-                screenX + offset + size*0.5f, screenY + offset + size*0.1f
+                screenX + offset + size * 0.5f, screenY + offset + size * 0.65f + hatHeight * 0.5f,
+                screenX + offset + size * 0.25f, screenY + offset + size,
+                screenX + offset + size * 0.75f, screenY + offset + size
             );
-            
-            // Inner detail
-            sr.setColor(entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK);
-            sr.rect(screenX + offset + size*0.4f, screenY + offset + size*0.3f, size*0.2f, size*0.4f);
         } else if (entity instanceof Assassin) {
-            // Assassin icon (Dagger/Triangle)
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
-            sr.setColor(teamColor);
-            
-            // Dagger blade
+            // Cloak body
+            sr.setColor(bodyColor);
+            sr.rect(screenX + offset + size * 0.2f, screenY + offset, size * 0.6f, size * 0.55f);
+            // Hood band (vibrant hat)
+            sr.setColor(hatColor);
+            sr.rect(screenX + offset + size * 0.15f, screenY + offset + size * 0.55f, size * 0.7f, hatHeight * 0.4f);
+            // Hood peak
             sr.triangle(
-                screenX + offset + size*0.5f, screenY + offset + size*0.9f,
-                screenX + offset + size*0.3f, screenY + offset + size*0.4f,
-                screenX + offset + size*0.7f, screenY + offset + size*0.4f
+                screenX + offset + size * 0.25f, screenY + offset + size * 0.75f,
+                screenX + offset + size * 0.75f, screenY + offset + size * 0.75f,
+                screenX + offset + size * 0.5f, screenY + offset + size
             );
-            // Handle
-            sr.setColor(Color.BROWN);
-            sr.rect(screenX + offset + size*0.45f, screenY + offset + size*0.1f, size*0.1f, size*0.3f);
-            sr.rect(screenX + offset + size*0.3f, screenY + offset + size*0.3f, size*0.4f, size*0.1f);
+            // Eye slit
+            sr.setColor(accentColor);
+            sr.rect(screenX + offset + size * 0.35f, screenY + offset + size * 0.45f, size * 0.3f, size * 0.06f);
         } else {
             // Generic entity
             sr.setColor(Color.MAGENTA);
@@ -1509,9 +1532,12 @@ public class DualViewScreen implements Screen {
     }
 
     private void renderEntityIso(ShapeRenderer sr, Entity entity) {
+        Color bodyColor = bodyColorForEntity(entity);
+        Color hatColor = hatColorForTeam(entity.getTeam());
+        Color accentColor = accentColorForTeam(entity.getTeam());
+
         if (entity instanceof King) {
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : new Color(0.2f, 0.2f, 0.2f, 1f);
-            sr.setColor(teamColor);
+            sr.setColor(bodyColor);
             
             float x = entity.getX();
             float y = entity.getY();
@@ -1542,21 +1568,19 @@ public class DualViewScreen implements Screen {
                 sr.rectLine(t4[0], t4[1]-margin, t1[0], t1[1]-margin, 2f);
             }
             
-            // Draw simple 3D-ish King
-            // Base
-            sr.rect(bx - scale*0.3f, by, scale*0.6f, scale*0.1f);
-            // Body
-            sr.triangle(
-                bx - scale*0.2f, by + scale*0.1f,
-                bx + scale*0.2f, by + scale*0.1f,
-                bx, by + scale*0.6f
-            );
-            // Cross
-            sr.rectLine(bx, by + scale*0.5f, bx, by + scale*0.9f, 2f);
-            sr.rectLine(bx - scale*0.15f, by + scale*0.75f, bx + scale*0.15f, by + scale*0.75f, 2f);
+            // Draw fuller king body
+            sr.rect(bx - scale*0.25f, by, scale*0.5f, scale*0.4f);
+            sr.setColor(accentColor);
+            sr.rect(bx - scale*0.05f, by, scale*0.1f, scale*0.4f);
+            // Crown band
+            sr.setColor(Color.GOLD);
+            sr.rect(bx - scale*0.3f, by + scale*0.45f, scale*0.6f, scale*0.07f);
+            // Crown spikes in vibrant hat hue
+            sr.setColor(hatColor);
+            sr.triangle(bx - scale*0.2f, by + scale*0.52f, bx, by + scale*0.9f, bx + scale*0.2f, by + scale*0.52f);
+            sr.circle(bx, by + scale*0.7f, scale*0.05f);
         } else if (entity instanceof Guard) {
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.LIGHT_GRAY : Color.DARK_GRAY;
-            sr.setColor(teamColor);
+            sr.setColor(bodyColor);
             
             float x = entity.getX();
             float y = entity.getY();
@@ -1584,15 +1608,16 @@ public class DualViewScreen implements Screen {
                 sr.rectLine(t4[0], t4[1]-margin, t1[0], t1[1]-margin, 2f);
             }
             
-            // Draw Guard (Blocky with helmet)
-            // Body
-            sr.rect(bx - scale*0.25f, by, scale*0.5f, scale*0.5f);
-            // Helmet
-            sr.setColor(0.6f, 0.6f, 0.65f, 1f);
-            sr.rect(bx - scale*0.2f, by + scale*0.5f, scale*0.4f, scale*0.3f);
+            // Draw Guard body
+            sr.rect(bx - scale*0.2f, by, scale*0.4f, scale*0.4f);
+            sr.setColor(accentColor);
+            sr.rect(bx - scale*0.05f, by + scale*0.05f, scale*0.1f, scale*0.3f);
+            // Helmet plume
+            sr.setColor(hatColor);
+            sr.rect(bx - scale*0.25f, by + scale*0.42f, scale*0.5f, scale*0.08f);
+            sr.triangle(bx, by + scale*0.5f, bx - scale*0.2f, by + scale*0.75f, bx + scale*0.2f, by + scale*0.75f);
         } else if (entity instanceof Assassin) {
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
-            sr.setColor(teamColor);
+            sr.setColor(bodyColor);
             
             float x = entity.getX();
             float y = entity.getY();
@@ -1620,20 +1645,13 @@ public class DualViewScreen implements Screen {
                 sr.rectLine(t4[0], t4[1]-margin, t1[0], t1[1]-margin, 2f);
             }
             
-            // Draw Assassin (Hooded, crouching)
-            // Body (Lower)
-            sr.triangle(
-                bx - scale*0.3f, by,
-                bx + scale*0.3f, by,
-                bx, by + scale*0.5f
-            );
-            // Hood/Head
-            sr.setColor(teamColor);
-            sr.triangle(
-                bx - scale*0.2f, by + scale*0.4f,
-                bx + scale*0.2f, by + scale*0.4f,
-                bx, by + scale*0.8f
-            );
+            sr.triangle(bx - scale*0.25f, by, bx + scale*0.25f, by, bx, by + scale*0.45f);
+            // Hood band + peak
+            sr.setColor(hatColor);
+            sr.rect(bx - scale*0.25f, by + scale*0.45f, scale*0.5f, scale*0.08f);
+            sr.triangle(bx - scale*0.18f, by + scale*0.53f, bx + scale*0.18f, by + scale*0.53f, bx, by + scale*0.85f);
+            sr.setColor(accentColor);
+            sr.rect(bx - scale*0.12f, by + scale*0.4f, scale*0.24f, scale*0.04f);
         }
     }
 
@@ -1659,34 +1677,47 @@ public class DualViewScreen implements Screen {
             sr.rect(screenX - 2, screenZ - 2, size + 4, size + 4);
         }
         
+        Color bodyColor = bodyColorForEntity(entity);
+        Color hatColor = hatColorForTeam(entity.getTeam());
+        Color accentColor = accentColorForTeam(entity.getTeam());
+
         if (entity instanceof King) {
-            // Draw King icon (Side view profile)
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
-            sr.setColor(teamColor);
-            sr.rect(screenX + offset, screenZ + offset, size, size);
-            // Crown
+            sr.setColor(bodyColor);
+            sr.rect(screenX + offset + size*0.1f, screenZ + offset, size*0.8f, size*0.7f);
+            sr.setColor(accentColor);
+            sr.rect(screenX + offset + size*0.45f, screenZ + offset, size*0.1f, size*0.7f);
             sr.setColor(Color.GOLD);
-            sr.rect(screenX + offset, screenZ + offset + size*0.8f, size, size*0.2f);
-        } else if (entity instanceof Guard) {
-            // Draw Guard icon (Side view)
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.LIGHT_GRAY : Color.DARK_GRAY;
-            sr.setColor(teamColor);
-            sr.rect(screenX + offset, screenZ + offset, size, size);
-            // Helmet visor
-            sr.setColor(Color.BLACK);
-            sr.rect(screenX + offset + size*0.6f, screenZ + offset + size*0.6f, size*0.4f, size*0.1f);
-        } else if (entity instanceof Assassin) {
-            // Draw Assassin icon (Side view - Crouching)
-            Color teamColor = entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK;
-            sr.setColor(teamColor);
-            // Low body
-            sr.rect(screenX + offset, screenZ + offset, size, size*0.6f);
-            // Hood
+            sr.rect(screenX + offset + size*0.05f, screenZ + offset + size*0.7f, size*0.9f, size*0.2f);
+            sr.setColor(hatColor);
             sr.triangle(
-                screenX + offset, screenZ + offset + size*0.6f,
-                screenX + offset + size, screenZ + offset + size*0.6f,
-                screenX + offset + size*0.5f, screenZ + offset + size
+                screenX + offset + size*0.15f, screenZ + offset + size*0.9f,
+                screenX + offset + size*0.85f, screenZ + offset + size*0.9f,
+                screenX + offset + size*0.5f, screenZ + offset + size*1.05f
             );
+        } else if (entity instanceof Guard) {
+            sr.setColor(bodyColor);
+            sr.rect(screenX + offset + size*0.15f, screenZ + offset, size*0.7f, size*0.7f);
+            sr.setColor(accentColor);
+            sr.rect(screenX + offset + size*0.4f, screenZ + offset + size*0.1f, size*0.2f, size*0.5f);
+            sr.setColor(hatColor);
+            sr.rect(screenX + offset + size*0.15f, screenZ + offset + size*0.7f, size*0.7f, size*0.15f);
+            sr.triangle(
+                screenX + offset + size*0.5f, screenZ + offset + size*0.85f,
+                screenX + offset + size*0.2f, screenZ + offset + size*1.05f,
+                screenX + offset + size*0.8f, screenZ + offset + size*1.05f
+            );
+        } else if (entity instanceof Assassin) {
+            sr.setColor(bodyColor);
+            sr.rect(screenX + offset + size*0.2f, screenZ + offset, size*0.6f, size*0.5f);
+            sr.setColor(hatColor);
+            sr.rect(screenX + offset + size*0.15f, screenZ + offset + size*0.5f, size*0.7f, size*0.12f);
+            sr.triangle(
+                screenX + offset + size*0.15f, screenZ + offset + size*0.62f,
+                screenX + offset + size*0.85f, screenZ + offset + size*0.62f,
+                screenX + offset + size*0.5f, screenZ + offset + size*0.95f
+            );
+            sr.setColor(accentColor);
+            sr.rect(screenX + offset + size*0.35f, screenZ + offset + size*0.35f, size*0.3f, size*0.08f);
         } else {
             sr.setColor(Color.MAGENTA);
             sr.circle(screenX + blockSize/2, screenZ + blockSize/2, size/2);
@@ -1707,35 +1738,51 @@ public class DualViewScreen implements Screen {
         // Render blocks with textures (optimized with frustum culling and fog)
         gridRenderer.render3D(gridWorld, fpsCamera);
         
-        // Draw entities (keep using ShapeRenderer for now, or upgrade later)
-        ShapeRenderer sr = gridRenderer.getShapeRenderer();
-        sr.setProjectionMatrix(fpsCamera.combined);
-        sr.begin(ShapeRenderer.ShapeType.Filled);
-        
-        int px = (int)fpsCamera.position.x;
-        int py = (int)fpsCamera.position.y;
-        int pz = (int)fpsCamera.position.z;
-        float fogStart = 48f; // Match GridRenderer (80 * 0.6)
-        float fogEnd = 72f;   // Match GridRenderer (80 * 0.9)
-        
-        // Draw entities
+        fpsRenderBuffer.clear();
         for (Entity entity : worldContext.getEntities()) {
             if (entity == player) continue;
-            
-            float dist = Vector3.dst(px, py, pz, entity.getX(), entity.getY(), entity.getZ());
-            Color color = (entity.getTeam() == Team.WHITE ? Color.WHITE : Color.BLACK).cpy();
-            
-            // Apply fog
-            float fogFactor = MathUtils.clamp((dist - fogStart) / (fogEnd - fogStart), 0f, 1f);
-            color.lerp(fogColor, fogFactor);
-            
-            sr.setColor(color);
-            // Draw box with Z offset so it sits on the ground (box is centered at the given position)
-            sr.box(entity.getX(), entity.getY(), entity.getZ() + 1.8f, 0.6f, 0.6f, 3.6f);
+            fpsRenderBuffer.add(entity);
         }
-        
-        sr.end();
+        if (!fpsRenderBuffer.isEmpty()) {
+            unitRenderer.render(fpsCamera, fpsRenderBuffer);
+            renderFpsHealthText(fpsRenderBuffer);
+            fpsRenderBuffer.clear();
+        }
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
+    }
+
+    private void renderFpsHealthText(List<Entity> entities) {
+        int screenWidth = Gdx.graphics.getWidth();
+        int screenHeight = Gdx.graphics.getHeight();
+        overlayProjection.setToOrtho2D(0, 0, screenWidth, screenHeight);
+        overlayBatch.setProjectionMatrix(overlayProjection);
+        overlayBatch.begin();
+        for (Entity entity : entities) {
+            if (!(entity instanceof Unit)) {
+                continue;
+            }
+            Unit unit = (Unit) entity;
+            if (unit.isCorpse()) {
+                continue;
+            }
+            if (unit.getHp() >= unit.getMaxHp()) {
+                continue;
+            }
+            fpsLabelPosition.set(unit.getX(), unit.getY(), unit.getZ() + 2.8f);
+            fpsCamera.project(fpsLabelPosition);
+            if (fpsLabelPosition.z < 0f || fpsLabelPosition.z > 1f) {
+                continue;
+            }
+            if (fpsLabelPosition.x < 0 || fpsLabelPosition.x > screenWidth || fpsLabelPosition.y < 0 || fpsLabelPosition.y > screenHeight) {
+                continue;
+            }
+            String hpText = MathUtils.round(unit.getHp()) + " / " + MathUtils.round(unit.getMaxHp());
+            glyphLayout.setText(overlayFont, hpText);
+            float drawX = fpsLabelPosition.x - glyphLayout.width / 2f;
+            float drawY = fpsLabelPosition.y + 18f;
+            overlayFont.draw(overlayBatch, glyphLayout, drawX, drawY);
+        }
+        overlayBatch.end();
     }
 
     @Override
@@ -1777,6 +1824,7 @@ public class DualViewScreen implements Screen {
     @Override
     public void dispose() {
         gridRenderer.dispose();
+        unitRenderer.dispose();
         overlayBatch.dispose();
         overlayFont.dispose();
     }
