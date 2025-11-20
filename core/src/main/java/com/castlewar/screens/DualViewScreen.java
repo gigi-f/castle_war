@@ -128,6 +128,7 @@ public class DualViewScreen implements Screen {
     private static final Color BLACK_HAT_COLOR = new Color(0.95f, 0.3f, 0.8f, 1f);
     private static final Color WHITE_ACCENT_COLOR = new Color(0.2f, 0.6f, 1f, 1f);
     private static final Color BLACK_ACCENT_COLOR = new Color(1f, 0.25f, 0.25f, 1f);
+    private static final float AWARENESS_ICON_SCALE = 4f;
     private static final Color ALERT_ICON_COLOR = new Color(1f, 0.82f, 0.25f, 1f);
     private static final Color INVESTIGATE_ICON_COLOR = new Color(0.55f, 0.9f, 1f, 1f);
     
@@ -1786,19 +1787,16 @@ public class DualViewScreen implements Screen {
                 continue;
             }
             float drawX = fpsLabelPosition.x;
-            float drawY = fpsLabelPosition.y + 18f;
+            float hpBaseY = fpsLabelPosition.y + 18f;
+            float iconBaseY = fpsLabelPosition.y + 54f;
+            if (drawIcon) {
+                drawAwarenessGlyph(unit, drawX, iconBaseY);
+            }
             if (drawHp) {
                 overlayFont.setColor(Color.WHITE);
                 String hpText = MathUtils.round(unit.getHp()) + " / " + MathUtils.round(unit.getMaxHp());
                 glyphLayout.setText(overlayFont, hpText);
-                overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, drawY);
-                drawY += glyphLayout.height + 4f;
-            }
-            if (drawIcon) {
-                AwarenessIcon icon = unit.getAwarenessIcon();
-                overlayFont.setColor(iconColorFor(icon, unit.getAwarenessIconAlpha()));
-                glyphLayout.setText(overlayFont, icon.getSymbol());
-                overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, drawY);
+                overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, hpBaseY);
             }
         }
         overlayBatch.end();
@@ -1825,7 +1823,7 @@ public class DualViewScreen implements Screen {
                 began = true;
             }
             float drawX = (unit.getX() + 0.5f) * blockSize;
-            float drawY = (unit.getY() + 0.5f) * blockSize + blockSize * 0.7f;
+            float drawY = (unit.getY() + 0.5f) * blockSize + blockSize * 1.2f;
             drawAwarenessGlyph(unit, drawX, drawY);
         }
         if (began) {
@@ -1857,7 +1855,7 @@ public class DualViewScreen implements Screen {
                 began = true;
             }
             float drawX = (unit.getX() + 0.5f) * blockSize;
-            float drawY = (z + undergroundDepth) * blockSize + blockSize * 0.9f;
+            float drawY = (z + undergroundDepth) * blockSize + blockSize * 1.35f;
             drawAwarenessGlyph(unit, drawX, drawY);
         }
         if (began) {
@@ -1883,7 +1881,7 @@ public class DualViewScreen implements Screen {
                 overlayBatch.begin();
                 began = true;
             }
-            float[] iso = projectIsoPoint(unit.getX() + 0.5f, unit.getY() + 0.5f, unit.getZ() + 1.5f, centerX, centerY);
+            float[] iso = projectIsoPoint(unit.getX() + 0.5f, unit.getY() + 0.5f, unit.getZ() + 2.2f, centerX, centerY);
             drawAwarenessGlyph(unit, iso[0], iso[1]);
         }
         if (began) {
@@ -1895,8 +1893,12 @@ public class DualViewScreen implements Screen {
     private void drawAwarenessGlyph(Unit unit, float drawX, float drawY) {
         AwarenessIcon icon = unit.getAwarenessIcon();
         overlayFont.setColor(iconColorFor(icon, unit.getAwarenessIconAlpha()));
+        float previousScaleX = overlayFont.getData().scaleX;
+        float previousScaleY = overlayFont.getData().scaleY;
+        overlayFont.getData().setScale(AWARENESS_ICON_SCALE);
         glyphLayout.setText(overlayFont, icon.getSymbol());
-        overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, drawY);
+        overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, drawY + glyphLayout.height / 2f);
+        overlayFont.getData().setScale(previousScaleX, previousScaleY);
     }
 
     private boolean shouldRenderAwareness(Unit unit) {
