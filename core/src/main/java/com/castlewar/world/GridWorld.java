@@ -25,7 +25,8 @@ public class GridWorld {
     CASTLE_BLACK_STAIR,
     DOOR,
     WINDOW,
-    WATER
+    WATER,
+    MOUNTAIN_ROCK
     }
     
     public GridWorld(int width, int depth, int height) {

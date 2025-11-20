@@ -77,6 +77,69 @@ public class WorldContext {
         this.totalVerticalBlocks = gridWorld.getHeight() + undergroundDepth;
 
         buildCastles();
+        buildPerimeterMountains();
+    }
+
+    private void buildPerimeterMountains() {
+        int width = gridWorld.getWidth();
+        int depth = gridWorld.getDepth();
+        int height = gridWorld.getHeight();
+        
+        // Mountain parameters
+        int baseHeight = 15; // Minimum height of mountains
+        int peakHeight = height - 5; // Maximum height
+        int baseMountainWidth = 15; // Base width
+        
+        // Use a fixed seed for consistent terrain
+        MathUtils.random.setSeed(12345);
+        
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < depth; y++) {
+                // Calculate distance to nearest edge
+                int distToEdgeX = Math.min(x, width - 1 - x);
+                int distToEdgeY = Math.min(y, depth - 1 - y);
+                int distToEdge = Math.min(distToEdgeX, distToEdgeY);
+                
+                // Calculate variable mountain width using sine waves for natural curves
+                // Combine multiple frequencies for more organic look
+                float wave1 = MathUtils.sin(x * 0.05f) + MathUtils.cos(y * 0.05f); // Low freq
+                float wave2 = MathUtils.sin(y * 0.1f) * 0.5f + MathUtils.cos(x * 0.15f) * 0.5f; // Med freq
+                
+                float widthVariation = (wave1 + wave2) * 4.0f; // Vary by +/- ~6-8 blocks
+                float currentMountainWidth = baseMountainWidth + widthVariation;
+                
+                // Only build mountains near the edge
+                if (distToEdge < currentMountainWidth) {
+                    // Calculate height based on distance to edge (closer to edge = higher)
+                    // Use noise to make it jagged
+                    float noise = MathUtils.random(0.8f, 1.2f);
+                    
+                    // Normalize distance based on the LOCAL width
+                    float edgeFactor = 1.0f - ((float)distToEdge / currentMountainWidth); 
+                    if (edgeFactor < 0) edgeFactor = 0;
+                    
+                    // Make the falloff non-linear (steep cliffs)
+                    edgeFactor = edgeFactor * edgeFactor;
+                    
+                    int terrainHeight = (int)(baseHeight + (peakHeight - baseHeight) * edgeFactor * noise);
+                    
+                    // Clamp height
+                    terrainHeight = MathUtils.clamp(terrainHeight, 0, height - 1);
+                    
+                    // Fill blocks
+                    for (int z = 0; z <= terrainHeight; z++) {
+                        // Don't overwrite existing castle blocks or water
+                        if (gridWorld.getBlock(x, y, z) == GridWorld.BlockState.AIR || 
+                            gridWorld.getBlock(x, y, z) == GridWorld.BlockState.GRASS) {
+                            
+                            // Top blocks are grass/snow (optional), rest is rock
+                            // For now, just use mountain rock
+                            gridWorld.setBlock(x, y, z, GridWorld.BlockState.MOUNTAIN_ROCK);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private CastleLayout[] createCastleLayouts() {

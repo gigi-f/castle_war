@@ -49,6 +49,7 @@ public class GridRenderer {
     private Texture doorTexture;
     private Texture windowTexture;
     private Texture defaultTexture;
+    private Texture cliffTexture;
 
     private Environment environment;
     private Map<BlockState, List<Model>> blockModels;
@@ -70,16 +71,19 @@ public class GridRenderer {
             stoneTexture = new Texture(Gdx.files.internal("textures/stone_wall.png"));
             woodTexture = new Texture(Gdx.files.internal("textures/wooden_stairs.png"));
             grassTexture = new Texture(Gdx.files.internal("textures/grass.png"));
+            cliffTexture = new Texture(Gdx.files.internal("textures/cliff_rock.png"));
             
             // Set wrap to Repeat for tiling
             stoneTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
             woodTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
             grassTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
+            cliffTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
             
             // Set filter to Nearest for pixel art look
             stoneTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             woodTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             grassTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+            cliffTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
             
         } catch (Exception e) {
             Gdx.app.error("GridRenderer", "Failed to load textures", e);
@@ -92,6 +96,7 @@ public class GridRenderer {
         if (stoneTexture == null) stoneTexture = createColorTexture(Color.GRAY);
         if (woodTexture == null) woodTexture = createColorTexture(Color.BROWN);
         if (grassTexture == null) grassTexture = createColorTexture(Color.GREEN);
+        if (cliffTexture == null) cliffTexture = createColorTexture(Color.DARK_GRAY);
 
         whiteWallTexture = stoneTexture; 
         blackWallTexture = stoneTexture; 
@@ -134,7 +139,8 @@ public class GridRenderer {
             boolean useTiling = (state == BlockState.GRASS || 
                                  state == BlockState.STONE || 
                                  state == BlockState.CASTLE_WHITE || 
-                                 state == BlockState.CASTLE_BLACK);
+                                 state == BlockState.CASTLE_BLACK ||
+                                 state == BlockState.MOUNTAIN_ROCK);
 
             List<Model> models = new ArrayList<>();
             List<ModelInstance> instances = new ArrayList<>();
@@ -196,6 +202,7 @@ public class GridRenderer {
             case CASTLE_BLACK_STAIR: return woodTexture;
             case DOOR: return doorTexture;
             case WINDOW: return windowTexture;
+            case MOUNTAIN_ROCK: return cliffTexture;
             default: return defaultTexture;
         }
     }
@@ -205,6 +212,7 @@ public class GridRenderer {
             case CASTLE_WHITE: return new Color(0.9f, 0.9f, 0.9f, 1f);
             case CASTLE_BLACK: return new Color(0.3f, 0.3f, 0.3f, 1f);
             case CASTLE_BLACK_STAIR: return new Color(0.6f, 0.5f, 0.4f, 1f);
+            case MOUNTAIN_ROCK: return new Color(0.6f, 0.6f, 0.65f, 1f);
             default: return Color.WHITE;
         }
     }
@@ -236,6 +244,17 @@ public class GridRenderer {
                     
                     // Skip AIR blocks (major optimization)
                     if (block == BlockState.AIR) continue;
+                    
+                    // Occlusion Culling: Skip blocks completely surrounded by opaque blocks
+                    // This is critical for performance with large solid structures like mountains
+                    if (world.isOpaque(world.getBlock(x + 1, y, z)) &&
+                        world.isOpaque(world.getBlock(x - 1, y, z)) &&
+                        world.isOpaque(world.getBlock(x, y + 1, z)) &&
+                        world.isOpaque(world.getBlock(x, y - 1, z)) &&
+                        world.isOpaque(world.getBlock(x, y, z + 1)) &&
+                        world.isOpaque(world.getBlock(x, y, z - 1))) {
+                        continue;
+                    }
                     
                     // Calculate distance for fog and frustum culling
                     float dx = x + 0.5f - camera.position.x;
@@ -309,6 +328,7 @@ public class GridRenderer {
             case CASTLE_BLACK_STAIR: return new Color(0.65f, 0.4f, 0.2f, 1);
             case DOOR: return new Color(0.4f, 0.25f, 0.1f, 1);
             case WINDOW: return new Color(0.6f, 0.8f, 1.0f, 0.6f);
+            case MOUNTAIN_ROCK: return new Color(0.4f, 0.4f, 0.45f, 1);
             default: return Color.WHITE;
         }
     }
@@ -332,6 +352,7 @@ public class GridRenderer {
         if (doorTexture != null) doorTexture.dispose();
         if (windowTexture != null) windowTexture.dispose();
         if (defaultTexture != null) defaultTexture.dispose();
+        if (cliffTexture != null) cliffTexture.dispose();
         
         for (List<Model> models : blockModels.values()) {
             for (Model model : models) {
