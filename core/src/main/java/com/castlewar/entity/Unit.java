@@ -18,6 +18,24 @@ public abstract class Unit extends Entity {
     private static final float KNOCKBACK_DAMPING = 4f;
     private static final float BASE_KNOCKBACK_STRENGTH = 25f;
     private static final float MIN_VERTICAL_RECOIL = 2.5f;
+    private static final float AWARENESS_ICON_DURATION = 0.85f;
+    private static final float AWARENESS_FREEZE_DURATION = 0.45f;
+
+    public enum AwarenessIcon {
+        NONE(""),
+        ALERT("!"),
+        INVESTIGATE("?");
+
+        private final String symbol;
+
+        AwarenessIcon(String symbol) {
+            this.symbol = symbol;
+        }
+
+        public String getSymbol() {
+            return symbol;
+        }
+    }
 
     protected String name;
     protected float hp;
@@ -126,6 +144,9 @@ public abstract class Unit extends Entity {
     protected float hitStunTimer = 0f;
     protected float corpseTimer = 0f;
     private boolean deathRegistered = false;
+    private AwarenessIcon awarenessIcon = AwarenessIcon.NONE;
+    private float awarenessIconTimer = 0f;
+    private float awarenessFreezeTimer = 0f;
 
     private final Vector3 knockbackImpulse = new Vector3();
     private final Vector3 knockbackPlanarDir = new Vector3();
@@ -373,6 +394,15 @@ public abstract class Unit extends Entity {
         if (hitStunTimer > 0) {
             hitStunTimer = Math.max(0f, hitStunTimer - delta);
         }
+        if (awarenessFreezeTimer > 0f) {
+            awarenessFreezeTimer = Math.max(0f, awarenessFreezeTimer - delta);
+        }
+        if (awarenessIconTimer > 0f) {
+            awarenessIconTimer = Math.max(0f, awarenessIconTimer - delta);
+            if (awarenessIconTimer == 0f) {
+                awarenessIcon = AwarenessIcon.NONE;
+            }
+        }
 
         if (isDead()) {
             corpseTimer += delta;
@@ -539,11 +569,64 @@ public abstract class Unit extends Entity {
                 }
             }
         }
-        targetEnemy = closest;
+        setTargetEnemy(closest);
+    }
+
+    public Unit getTargetEnemy() {
+        return targetEnemy;
+    }
+
+    protected void setTargetEnemy(Unit newTarget) {
+        if (targetEnemy == newTarget) {
+            return;
+        }
+        Unit previous = this.targetEnemy;
+        this.targetEnemy = newTarget;
+        if (newTarget != null && (previous == null || previous != newTarget)) {
+            onEnemySpotted(newTarget);
+        }
+    }
+
+    protected void onEnemySpotted(Unit enemy) {
+        triggerAwarenessCue(AwarenessIcon.ALERT, true);
+    }
+
+    public AwarenessIcon getAwarenessIcon() {
+        return awarenessIcon;
+    }
+
+    public float getAwarenessIconAlpha() {
+        if (awarenessIcon == AwarenessIcon.NONE) {
+            return 0f;
+        }
+        return MathUtils.clamp(awarenessIconTimer / AWARENESS_ICON_DURATION, 0f, 1f);
+    }
+
+    public void triggerAwarenessCue(AwarenessIcon icon) {
+        triggerAwarenessCue(icon, true);
+    }
+
+    public void triggerAwarenessCue(AwarenessIcon icon, boolean applyPause) {
+        if (icon == null || icon == AwarenessIcon.NONE || isDead()) {
+            if (icon == AwarenessIcon.NONE) {
+                clearAwarenessCue();
+            }
+            return;
+        }
+        awarenessIcon = icon;
+        awarenessIconTimer = AWARENESS_ICON_DURATION;
+        if (applyPause) {
+            awarenessFreezeTimer = Math.max(awarenessFreezeTimer, AWARENESS_FREEZE_DURATION);
+        }
+    }
+
+    public void clearAwarenessCue() {
+        awarenessIcon = AwarenessIcon.NONE;
+        awarenessIconTimer = 0f;
     }
 
     public boolean isStunned() {
-        return hitStunTimer > 0f;
+        return hitStunTimer > 0f || awarenessFreezeTimer > 0f;
     }
 
     public float getDamageFlashAlpha() {
@@ -569,6 +652,8 @@ public abstract class Unit extends Entity {
     private void registerDeath() {
         deathRegistered = true;
         corpseTimer = 0f;
+        clearAwarenessCue();
+        awarenessFreezeTimer = 0f;
         Vector3 planar = tmp.set(lastHitDirection.x, lastHitDirection.y, 0f);
         if (planar.isZero(0.0001f)) {
             planar.set(0, 1, 0);

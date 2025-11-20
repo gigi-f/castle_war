@@ -14,7 +14,7 @@ public abstract class AiAgent<T extends Unit> {
     protected final T owner;
     protected final AiContext context;
 
-    private StateMachine<T, ? extends State<T>> stateMachine;
+    private StateMachine<T, State<T>> stateMachine;
     private BehaviorTree<T> behaviorTree;
 
     protected AiAgent(T owner, AiContext context) {
@@ -39,12 +39,13 @@ public abstract class AiAgent<T extends Unit> {
         return context;
     }
 
-    public StateMachine<T, ? extends State<T>> getStateMachine() {
+    public StateMachine<T, State<T>> getStateMachine() {
         return stateMachine;
     }
 
+    @SuppressWarnings("unchecked")
     public void setStateMachine(StateMachine<T, ? extends State<T>> stateMachine) {
-        this.stateMachine = stateMachine;
+        this.stateMachine = (StateMachine<T, State<T>>) stateMachine;
     }
 
     public BehaviorTree<T> getBehaviorTree() {

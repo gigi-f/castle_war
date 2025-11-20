@@ -28,6 +28,7 @@ import com.castlewar.entity.King;
 import com.castlewar.entity.Player;
 import com.castlewar.entity.Team;
 import com.castlewar.entity.Unit;
+import com.castlewar.entity.Unit.AwarenessIcon;
 import com.castlewar.renderer.GridRenderer;
 import com.castlewar.renderer.UnitRenderer;
 import com.castlewar.simulation.WorldContext;
@@ -120,12 +121,15 @@ public class DualViewScreen implements Screen {
     private final float blockSize = 10f;
     private final List<Entity> fpsRenderBuffer = new ArrayList<>();
     private final Vector3 fpsLabelPosition = new Vector3();
+    private final Color awarenessColor = new Color();
     private static final Color BODY_NEUTRAL = new Color(0.82f, 0.82f, 0.86f, 1f);
     private static final Color BODY_DARK = new Color(0.18f, 0.18f, 0.22f, 1f);
     private static final Color WHITE_HAT_COLOR = new Color(0.95f, 0.85f, 0.15f, 1f);
     private static final Color BLACK_HAT_COLOR = new Color(0.95f, 0.3f, 0.8f, 1f);
     private static final Color WHITE_ACCENT_COLOR = new Color(0.2f, 0.6f, 1f, 1f);
     private static final Color BLACK_ACCENT_COLOR = new Color(1f, 0.25f, 0.25f, 1f);
+    private static final Color ALERT_ICON_COLOR = new Color(1f, 0.82f, 0.25f, 1f);
+    private static final Color INVESTIGATE_ICON_COLOR = new Color(0.55f, 0.9f, 1f, 1f);
     
     // Current Z-level being viewed
     private int currentLayer;
@@ -766,6 +770,7 @@ public class DualViewScreen implements Screen {
         }
 
         renderSideSliceGuide();
+        renderTopDownAwarenessIcons();
     }
 
     private void renderSideScrollerFullView() {
@@ -828,6 +833,7 @@ public class DualViewScreen implements Screen {
         }
 
         renderTopLayerGuide();
+        renderSideAwarenessIcons();
     }
 
     private void renderIsometricViewContents() {
@@ -877,6 +883,7 @@ public class DualViewScreen implements Screen {
         
         sr.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
+        renderIsometricAwarenessIcons();
     }
 
     private void renderTopLayerGuide() {
@@ -1745,27 +1752,29 @@ public class DualViewScreen implements Screen {
         }
         if (!fpsRenderBuffer.isEmpty()) {
             unitRenderer.render(fpsCamera, fpsRenderBuffer);
-            renderFpsHealthText(fpsRenderBuffer);
+            renderFpsUnitLabels(fpsRenderBuffer);
             fpsRenderBuffer.clear();
         }
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
     }
 
-    private void renderFpsHealthText(List<Entity> entities) {
+    private void renderFpsUnitLabels(List<Entity> entities) {
         int screenWidth = Gdx.graphics.getWidth();
         int screenHeight = Gdx.graphics.getHeight();
         overlayProjection.setToOrtho2D(0, 0, screenWidth, screenHeight);
         overlayBatch.setProjectionMatrix(overlayProjection);
+        overlayFont.getData().setScale(1f);
         overlayBatch.begin();
         for (Entity entity : entities) {
-            if (!(entity instanceof Unit)) {
+            if (!(entity instanceof Unit unit)) {
                 continue;
             }
-            Unit unit = (Unit) entity;
             if (unit.isCorpse()) {
                 continue;
             }
-            if (unit.getHp() >= unit.getMaxHp()) {
+            boolean drawHp = unit.getHp() < unit.getMaxHp();
+            boolean drawIcon = shouldRenderAwareness(unit);
+            if (!drawHp && !drawIcon) {
                 continue;
             }
             fpsLabelPosition.set(unit.getX(), unit.getY(), unit.getZ() + 2.8f);
@@ -1776,13 +1785,129 @@ public class DualViewScreen implements Screen {
             if (fpsLabelPosition.x < 0 || fpsLabelPosition.x > screenWidth || fpsLabelPosition.y < 0 || fpsLabelPosition.y > screenHeight) {
                 continue;
             }
-            String hpText = MathUtils.round(unit.getHp()) + " / " + MathUtils.round(unit.getMaxHp());
-            glyphLayout.setText(overlayFont, hpText);
-            float drawX = fpsLabelPosition.x - glyphLayout.width / 2f;
+            float drawX = fpsLabelPosition.x;
             float drawY = fpsLabelPosition.y + 18f;
-            overlayFont.draw(overlayBatch, glyphLayout, drawX, drawY);
+            if (drawHp) {
+                overlayFont.setColor(Color.WHITE);
+                String hpText = MathUtils.round(unit.getHp()) + " / " + MathUtils.round(unit.getMaxHp());
+                glyphLayout.setText(overlayFont, hpText);
+                overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, drawY);
+                drawY += glyphLayout.height + 4f;
+            }
+            if (drawIcon) {
+                AwarenessIcon icon = unit.getAwarenessIcon();
+                overlayFont.setColor(iconColorFor(icon, unit.getAwarenessIconAlpha()));
+                glyphLayout.setText(overlayFont, icon.getSymbol());
+                overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, drawY);
+            }
         }
         overlayBatch.end();
+        overlayFont.setColor(Color.WHITE);
+    }
+
+    private void renderTopDownAwarenessIcons() {
+        boolean began = false;
+        overlayFont.getData().setScale(1f);
+        for (Entity entity : worldContext.getEntities()) {
+            if (!(entity instanceof Unit unit)) {
+                continue;
+            }
+            if (!shouldRenderAwareness(unit)) {
+                continue;
+            }
+            boolean visible = xRayEnabled || ((int) unit.getZ() <= currentLayer && unit.getZ() >= 0);
+            if (!visible) {
+                continue;
+            }
+            if (!began) {
+                overlayBatch.setProjectionMatrix(topDownCamera.combined);
+                overlayBatch.begin();
+                began = true;
+            }
+            float drawX = (unit.getX() + 0.5f) * blockSize;
+            float drawY = (unit.getY() + 0.5f) * blockSize + blockSize * 0.7f;
+            drawAwarenessGlyph(unit, drawX, drawY);
+        }
+        if (began) {
+            overlayBatch.end();
+            overlayFont.setColor(Color.WHITE);
+        }
+    }
+
+    private void renderSideAwarenessIcons() {
+        boolean began = false;
+        overlayFont.getData().setScale(1f);
+        for (Entity entity : worldContext.getEntities()) {
+            if (!(entity instanceof Unit unit)) {
+                continue;
+            }
+            if (!shouldRenderAwareness(unit)) {
+                continue;
+            }
+            if (!xRayEnabled && Math.round(unit.getY()) != sideViewSlice) {
+                continue;
+            }
+            float z = unit.getZ();
+            if (z < -undergroundDepth || z >= gridWorld.getHeight()) {
+                continue;
+            }
+            if (!began) {
+                overlayBatch.setProjectionMatrix(sideCamera.combined);
+                overlayBatch.begin();
+                began = true;
+            }
+            float drawX = (unit.getX() + 0.5f) * blockSize;
+            float drawY = (z + undergroundDepth) * blockSize + blockSize * 0.9f;
+            drawAwarenessGlyph(unit, drawX, drawY);
+        }
+        if (began) {
+            overlayBatch.end();
+            overlayFont.setColor(Color.WHITE);
+        }
+    }
+
+    private void renderIsometricAwarenessIcons() {
+        boolean began = false;
+        overlayFont.getData().setScale(1f);
+        float centerX = gridWorld.getWidth() / 2f;
+        float centerY = gridWorld.getDepth() / 2f;
+        for (Entity entity : worldContext.getEntities()) {
+            if (!(entity instanceof Unit unit)) {
+                continue;
+            }
+            if (!shouldRenderAwareness(unit)) {
+                continue;
+            }
+            if (!began) {
+                overlayBatch.setProjectionMatrix(isoCamera.combined);
+                overlayBatch.begin();
+                began = true;
+            }
+            float[] iso = projectIsoPoint(unit.getX() + 0.5f, unit.getY() + 0.5f, unit.getZ() + 1.5f, centerX, centerY);
+            drawAwarenessGlyph(unit, iso[0], iso[1]);
+        }
+        if (began) {
+            overlayBatch.end();
+            overlayFont.setColor(Color.WHITE);
+        }
+    }
+
+    private void drawAwarenessGlyph(Unit unit, float drawX, float drawY) {
+        AwarenessIcon icon = unit.getAwarenessIcon();
+        overlayFont.setColor(iconColorFor(icon, unit.getAwarenessIconAlpha()));
+        glyphLayout.setText(overlayFont, icon.getSymbol());
+        overlayFont.draw(overlayBatch, glyphLayout, drawX - glyphLayout.width / 2f, drawY);
+    }
+
+    private boolean shouldRenderAwareness(Unit unit) {
+        return unit.getAwarenessIcon() != AwarenessIcon.NONE && unit.getAwarenessIconAlpha() > 0.05f && !unit.isCorpse();
+    }
+
+    private Color iconColorFor(AwarenessIcon icon, float alpha) {
+        Color base = icon == AwarenessIcon.INVESTIGATE ? INVESTIGATE_ICON_COLOR : ALERT_ICON_COLOR;
+        awarenessColor.set(base);
+        awarenessColor.a = MathUtils.clamp(alpha, 0f, 1f);
+        return awarenessColor;
     }
 
     @Override

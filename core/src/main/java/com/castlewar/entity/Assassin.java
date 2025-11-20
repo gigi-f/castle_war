@@ -2,6 +2,10 @@ package com.castlewar.entity;
 
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
+import com.castlewar.ai.AiContext;
+import com.castlewar.ai.assassin.AssassinAgent;
+import com.castlewar.ai.assassin.AssassinState;
+import com.castlewar.simulation.WorldContext;
 import com.castlewar.world.GridWorld;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,6 +14,7 @@ public class Assassin extends Unit {
     private static final String[] NAMES = {"Shadow", "Ghost", "Viper", "Phantom", "Wraith", "Blade"};
     private static final float MIN_ASSASSIN_DISTANCE = 12f;
     private static final float SAFE_EXPOSURE_THRESHOLD = 0.35f;
+    private static final float BASE_SPEED = 8.0f;
     
     private Entity targetKing;
     private float moveTimer = 0f;
@@ -21,10 +26,13 @@ public class Assassin extends Unit {
     private final Vector3 preferredDirection = new Vector3();
     private Unit nearestAssassinThreat;
     private float nearestAssassinDistance = Float.MAX_VALUE;
+    private final AssassinAgent aiAgent;
+    private transient float aiDeltaSnapshot;
 
-    public Assassin(float x, float y, float z, Team team) {
+    public Assassin(float x, float y, float z, Team team, WorldContext worldContext) {
         super(x, y, z, team, generateName(), 30f, 40f);
         this.canClimb = true;
+        this.aiAgent = new AssassinAgent(this, new AiContext(worldContext));
     }
 
     private static String generateName() {
@@ -42,65 +50,116 @@ public class Assassin extends Unit {
             return;
         }
 
-        // Assassins are very fast - 2x speed
-        float speed = 8.0f; 
-        
-        if (isStunned()) {
-            // Freeze during stun
-            velocity.x = 0;
-            velocity.y = 0;
-        } else if (targetPosition != null) {
-            Vector3 direction = new Vector3(targetPosition).sub(position);
-            
-            direction.nor();
-            
-            velocity.x = direction.x * speed;
-            velocity.y = direction.y * speed;
-            
-            // If climbing (target Z > current Z), apply Z velocity
-            if (targetPosition.z > position.z + 0.1f) {
-                 velocity.z = direction.z * speed;
-                 // Compensate for gravity
-                 velocity.z += gravity * delta;
-            }
-            
-            float dst2 = position.dst2(targetPosition);
-            
-            if (dst2 < 0.2f * 0.2f) { // Increased threshold slightly for smoother movement
-                if (currentPath != null && !currentPath.isEmpty()) {
-                    targetPosition = currentPath.remove(0);
-                } else {
-                    velocity.set(0,0,0);
-                    targetPosition = null;
-                    moveTimer = 0f; 
-                }
-            }
-        } else if (!isStunned()) {
-            velocity.set(0,0,0);
-            moveTimer -= delta;
-            if (moveTimer <= 0) {
-                decideNextMove(world);
-            }
-        }
-        
+        this.aiDeltaSnapshot = delta;
+        aiAgent.update(delta);
+
         super.applyPhysics(delta, world);
-        
-        // Check for kill (King)
-        if (targetKing != null && targetKing instanceof Unit && !((Unit)targetKing).isDead() && position.dst(targetKing.getPosition()) < attackRange) {
-             attack((Unit)targetKing);
-        }
-        
-        // Check for nearby guards to attack if they are close
-        if (attackTimer <= 0 && targetEnemy != null && !targetEnemy.isDead()) {
-             if (position.dst(targetEnemy.getPosition()) < attackRange) {
-                 attack(targetEnemy);
-             }
-        }
+        resolvePostPhysicsAttacks();
     }
 
     @Override
     protected float getKnockbackStrengthAgainst(Unit target) {
         return 5.0f;
+    }
+
+    public void performSneakBehavior(float delta, GridWorld world) {
+        if (targetPosition == null && moveTimer <= 0f) {
+            decideNextMove(world);
+        }
+        resolveMovement(delta, world);
+    }
+
+    public void performStrikeBehavior(float delta, GridWorld world) {
+        if (targetEnemy != null && !targetEnemy.isDead()) {
+            if (targetPosition == null) {
+                pickSmartMove(world, targetEnemy.getPosition());
+            }
+        } else if (targetKing != null && targetKing instanceof Unit && !((Unit) targetKing).isDead()) {
+            if (targetPosition == null) {
+                pickSmartMove(world, targetKing.getPosition());
+            }
+        }
+        resolveMovement(delta, world);
+    }
+
+    public void performEscapeBehavior(float delta, GridWorld world) {
+        if (targetPosition == null || moveTimer <= 0f) {
+            pickShadowRetreat(world);
+        }
+        resolveMovement(delta, world);
+    }
+
+    private void resolveMovement(float delta, GridWorld world) {
+        if (isStunned()) {
+            velocity.x = 0f;
+            velocity.y = 0f;
+            return;
+        }
+
+        if (targetPosition != null) {
+            Vector3 direction = tmp.set(targetPosition).sub(position).nor();
+            velocity.x = direction.x * BASE_SPEED;
+            velocity.y = direction.y * BASE_SPEED;
+
+            if (targetPosition.z > position.z + 0.1f) {
+                velocity.z = direction.z * BASE_SPEED;
+                velocity.z += gravity * delta;
+            }
+
+            float dst2 = position.dst2(targetPosition);
+            if (dst2 < 0.2f * 0.2f) {
+                if (currentPath != null && !currentPath.isEmpty()) {
+                    targetPosition = currentPath.remove(0);
+                } else {
+                    velocity.set(0f, 0f, 0f);
+                    targetPosition = null;
+                    moveTimer = 0f;
+                }
+            }
+        } else {
+            velocity.set(0f, 0f, 0f);
+            moveTimer -= delta;
+            if (moveTimer <= 0f) {
+                decideNextMove(world);
+            }
+        }
+    }
+
+    private void resolvePostPhysicsAttacks() {
+        if (targetKing instanceof Unit && !((Unit) targetKing).isDead()) {
+            if (position.dst(targetKing.getPosition()) < attackRange) {
+                attack((Unit) targetKing);
+            }
+        }
+
+        if (attackTimer <= 0f && targetEnemy != null && !targetEnemy.isDead()) {
+            if (position.dst(targetEnemy.getPosition()) < attackRange) {
+                attack(targetEnemy);
+            }
+        }
+    }
+
+    public boolean hasStrikeOpportunity() {
+        if (targetEnemy != null && !targetEnemy.isDead()) {
+            return true;
+        }
+        return targetKing instanceof Unit && !((Unit) targetKing).isDead() && position.dst(targetKing.getPosition()) < 12f;
+    }
+
+    public boolean shouldFlee() {
+        return isFleeing || hp < maxHp * 0.4f;
+    }
+
+    public AssassinAgent getAiAgent() {
+        return aiAgent;
+    }
+
+    public float getAiDeltaSnapshot() {
+        return aiDeltaSnapshot;
+    }
+
+    public void changeState(AssassinState nextState) {
+        aiAgent.changeState(nextState);
     }
     
     public void checkForGuards(List<Entity> entities, GridWorld world, float delta) {

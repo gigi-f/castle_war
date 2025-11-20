@@ -10,9 +10,15 @@ import com.castlewar.entity.Guard;
  * migrate behaviour incrementally without losing the legacy control flow.
  */
 public final class GuardAgent extends AiAgent<Guard> {
+    private final DefaultStateMachine<Guard, GuardState> stateMachine;
 
     public GuardAgent(Guard owner, AiContext context) {
         super(owner, context);
-        setStateMachine(new DefaultStateMachine<>(owner, GuardState.ACTIVE));
+        this.stateMachine = new DefaultStateMachine<>(owner, GuardState.PATROL);
+        setStateMachine(stateMachine);
+    }
+
+    public void changeState(GuardState nextState) {
+        stateMachine.changeState(nextState);
     }
 }

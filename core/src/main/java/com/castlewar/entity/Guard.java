@@ -4,6 +4,8 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.castlewar.ai.AiContext;
 import com.castlewar.ai.guard.GuardAgent;
+import com.castlewar.ai.guard.GuardState;
+import com.castlewar.simulation.WorldContext;
 import com.castlewar.world.GridWorld;
 
 public class Guard extends Unit {
@@ -13,20 +15,24 @@ public class Guard extends Unit {
     }
 
     private static final String[] NAMES = {"Guard", "Sentry", "Warden", "Protector", "Shield", "Knight"};
+    private static final float ALERT_MEMORY_DURATION = 5f;
 
     private final GuardType type;
     private final GuardAgent aiAgent;
     private Entity targetToFollow; // For Entourage
     private float moveTimer = 0f;
     private Vector3 targetPosition = null;
-    private Vector3 facing = new Vector3(1, 0, 0);
-    private transient GridWorld aiWorldSnapshot;
+    private final Vector3 facing = new Vector3(1, 0, 0);
+    private final Vector3 lastKnownEnemyPosition = new Vector3();
+    private boolean hasLastKnownEnemy;
+    private float alertMemoryTimer;
+    private final Vector3 tempVector = new Vector3();
     private transient float aiDeltaSnapshot;
 
-    public Guard(float x, float y, float z, Team team, GuardType type) {
+    public Guard(float x, float y, float z, Team team, GuardType type, WorldContext worldContext) {
         super(x, y, z, team, generateName(type), 80f, 50f);
         this.type = type;
-        this.aiAgent = new GuardAgent(this, new AiContext());
+        this.aiAgent = new GuardAgent(this, new AiContext(worldContext));
     }
 
     private static String generateName(GuardType type) {
@@ -49,79 +55,70 @@ public class Guard extends Unit {
             return;
         }
 
-        this.aiWorldSnapshot = world;
         this.aiDeltaSnapshot = delta;
         aiAgent.update(delta);
+        
+        super.applyPhysics(delta, world);
     }
 
-    public void runLegacyBehavior() {
-        if (aiWorldSnapshot == null) {
-            return;
-        }
-        legacyUpdate(aiDeltaSnapshot, aiWorldSnapshot);
-    }
-
-    private void legacyUpdate(float delta, GridWorld world) {
+    public void updateFacing() {
         if (velocity.len2() > 0.1f) {
             facing.set(velocity).nor();
             facing.z = 0; 
             facing.nor();
         }
+    }
 
+    public void updateMovement(float delta) {
         if (isStunned()) {
-            // Freeze during stun
             velocity.x = 0;
             velocity.y = 0;
-        } else if (targetPosition != null) {
-            // Move towards target
-            float speed = 2.5f; // Slightly faster than King
+            return;
+        }
+        
+        if (targetPosition != null) {
+            float speed = 2.5f;
             Vector3 direction = new Vector3(targetPosition).sub(position);
-            direction.z = 0; // Ignore Z for horizontal movement
+            direction.z = 0;
             direction.nor();
             
             velocity.x = direction.x * speed;
             velocity.y = direction.y * speed;
             
-            // Check if close enough (ignoring Z for now, or check 3D?)
-            // If we are close in X/Y, we might be at the step.
             float dst2 = Vector3.dst2(position.x, position.y, 0, targetPosition.x, targetPosition.y, 0);
-            
-            if (dst2 < 0.1f * 0.1f) { // Very close
-                // Snap to center of block? Or just clear target?
-                // If we snap, we might teleport.
-                // Let's just clear target and stop.
+            if (dst2 < 0.1f * 0.1f) {
                 velocity.x = 0;
                 velocity.y = 0;
                 targetPosition = null;
                 moveTimer = MathUtils.random(0.5f, 2f);
             }
-        } else if (!isStunned()) {
+        } else {
             velocity.x = 0;
             velocity.y = 0;
             moveTimer -= delta;
-            if (moveTimer <= 0) {
-                decideNextMove(world);
-            }
         }
-        
+    }
+
+    public boolean isMoveTimerReady() {
+        return moveTimer <= 0;
+    }
+
+    public void updateAttack() {
         if (!isStunned() && targetEnemy != null && !targetEnemy.isDead()) {
+            rememberEnemySighting(targetEnemy.getPosition());
             float dist = position.dst(targetEnemy.getPosition());
             if (dist < attackRange) {
                 attack(targetEnemy);
-                // Stop moving to fight
                 velocity.x = 0;
                 velocity.y = 0;
                 targetPosition = null;
             } else if (dist < 6f) {
-                // Aggro: Move towards enemy
                 targetPosition = targetEnemy.getPosition();
             }
         }
-        
-        super.applyPhysics(delta, world);
     }
 
-    private void decideNextMove(GridWorld world) {
+    public void decideNextMove(GridWorld world) {
         if (type == GuardType.ENTOURAGE && targetToFollow != null) {
             followTarget(world);
         } else {
@@ -129,7 +126,7 @@ public class Guard extends Unit {
         }
     }
 
-    private void followTarget(GridWorld world) {
+    public void followTarget(GridWorld world) {
         // If far, move closer. If close, wander nearby.
         float dist = position.dst(targetToFollow.getPosition());
         if (dist > 3f) {
@@ -147,7 +144,7 @@ public class Guard extends Unit {
         pickSmartMove(world, target);
     }
 
-    private void patrol(GridWorld world) {
+    public void patrol(GridWorld world) {
         // Similar to King's wander logic
         int currentX = Math.round(position.x);
         int currentY = Math.round(position.y);
@@ -213,11 +210,110 @@ public class Guard extends Unit {
                 }
             }
         }
-        targetEnemy = closest;
+        setTargetEnemy(closest);
+        if (closest != null) {
+            rememberEnemySighting(closest.getPosition());
+        }
     }
 
     @Override
     protected float getKnockbackStrengthAgainst(Unit target) {
         return 7.5f;
+    }
+
+    public float getAttackRange() {
+        return attackRange;
+    }
+
+    public void setTargetPosition(Vector3 target) {
+        this.targetPosition = target;
+    }
+
+    public Vector3 getTargetPosition() {
+        return targetPosition;
+    }
+
+    public void clearTargetPosition() {
+        this.targetPosition = null;
+    }
+
+    public void stopMoving() {
+        velocity.x = 0;
+        velocity.y = 0;
+        targetPosition = null;
+    }
+
+    public GuardAgent getAiAgent() {
+        return aiAgent;
+    }
+
+    public float getAiDeltaSnapshot() {
+        return aiDeltaSnapshot;
+    }
+
+    public void rememberEnemySighting(Vector3 enemyPosition) {
+        if (enemyPosition == null) {
+            return;
+        }
+        lastKnownEnemyPosition.set(enemyPosition);
+        hasLastKnownEnemy = true;
+        alertMemoryTimer = ALERT_MEMORY_DURATION;
+    }
+
+    public void reportNoise(Vector3 location) {
+        rememberEnemySighting(location);
+    }
+
+    public void decayAlertMemory(float delta) {
+        if (!hasLastKnownEnemy) {
+            return;
+        }
+        alertMemoryTimer = Math.max(0f, alertMemoryTimer - delta);
+        if (alertMemoryTimer == 0f) {
+            hasLastKnownEnemy = false;
+        }
+    }
+
+    public boolean hasInvestigationTarget() {
+        return hasLastKnownEnemy;
+    }
+
+    public void moveTowardLastSighting(GridWorld world) {
+        if (!hasLastKnownEnemy) {
+            return;
+        }
+        if (position.dst2(lastKnownEnemyPosition) < 1f) {
+            hasLastKnownEnemy = false;
+            return;
+        }
+        if (targetPosition == null) {
+            pickMoveTowards(world, lastKnownEnemyPosition);
+        }
+    }
+
+    public void retreatFromThreat(GridWorld world) {
+        Vector3 threatPosition = null;
+        if (targetEnemy != null && !targetEnemy.isDead()) {
+            threatPosition = targetEnemy.getPosition();
+        } else if (hasLastKnownEnemy) {
+            threatPosition = lastKnownEnemyPosition;
+        }
+
+        tempVector.set(position);
+        if (threatPosition != null) {
+            tempVector.sub(threatPosition).nor().scl(6f).add(position);
+        } else {
+            tempVector.add(MathUtils.random(-4f, 4f), MathUtils.random(-4f, 4f), 0f);
+        }
+
+        pickMoveTowards(world, tempVector);
+    }
+
+    public boolean needsToFlee() {
+        return hp < maxHp * 0.3f;
+    }
+
+    public void changeState(GuardState nextState) {
+        aiAgent.changeState(nextState);
     }
 }

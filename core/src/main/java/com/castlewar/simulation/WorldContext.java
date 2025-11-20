@@ -308,7 +308,7 @@ public class WorldContext {
             float assassinX = (team == Team.WHITE) ? battlefieldStartX + 5 : battlefieldEndX - 5;
             float assassinY = startY + layout.height / 2f;
             float assassinZ = 1; // Spawn at ground level (z=1, same as King)
-            Assassin assassin = new Assassin(assassinX, assassinY, assassinZ, team);
+            Assassin assassin = new Assassin(assassinX, assassinY, assassinZ, team, this);
             entities.add(assassin);
         }
         
@@ -946,14 +946,14 @@ public class WorldContext {
         int spawnX = centerX + 2; 
         int spawnY = centerY + 2;
         int spawnZ = 1; // First floor
-                King king = new King(spawnX, spawnY, spawnZ, team);
+                King king = new King(spawnX, spawnY, spawnZ, team, this);
             entities.add(king);
             
             // Spawn Entourage Guards
             for (int i = 0; i < 2; i++) {
                 float gx = spawnX + (i == 0 ? 1 : -1);
                 float gy = spawnY + (i == 0 ? 1 : -1);
-                Guard guard = new Guard(gx, gy, spawnZ, team, Guard.GuardType.ENTOURAGE);
+                Guard guard = new Guard(gx, gy, spawnZ, team, Guard.GuardType.ENTOURAGE, this);
                 guard.setTargetToFollow(king);
                 entities.add(guard);
             }
@@ -963,7 +963,7 @@ public class WorldContext {
                 float px = startX + layout.width / 2f + MathUtils.random(-2, 2);
                 float py = startY + layout.height / 2f + MathUtils.random(-2, 2);
                 float pz = layout.battlementLevel; // Patrol battlements initially
-                Guard guard = new Guard(px, py, pz, team, Guard.GuardType.PATROL);
+                Guard guard = new Guard(px, py, pz, team, Guard.GuardType.PATROL, this);
                 entities.add(guard);
             }
             
