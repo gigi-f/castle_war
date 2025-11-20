@@ -410,6 +410,42 @@ public class WorldContext {
         }
     }
 
+    private void buildSecondFloor(CastleLayout layout, int startX, int startY) {
+        int r = 6;
+        int x1 = startX + r;
+        int x2 = startX + layout.width - 1 - r;
+        int y1 = startY + r;
+        int y2 = startY + layout.height - 1 - r;
+        
+        int floorZ = 12; // Second level
+        
+        // Use stair type for wooden appearance
+        GridWorld.BlockState stairType = getStairType(layout.wallType);
+        
+        // Fill the interior space between the walkways
+        // South walkway is at y1 - 2, north walkway is at y2 + 2
+        // We'll fill from turret to turret in X, and between the walkways in Y
+        
+        int floorStartX = x1 + r; // Right edge of left turrets
+        int floorEndX = x2 - r;   // Left edge of right turrets
+        
+        // Fill between the walkways
+        // South walkway ends around y1 - 2 + 1 (half width)
+        // North walkway starts around y2 + 2 - 1 (half width)
+        int floorStartY = y1 - 2 + 2; // Just past south walkway
+        int floorEndY = y2 + 2 - 2;   // Just before north walkway
+        
+        for (int x = floorStartX; x <= floorEndX; x++) {
+            for (int y = floorStartY; y <= floorEndY; y++) {
+                gridWorld.setBlock(x, y, floorZ, stairType);
+                // Clear space above for headroom
+                for (int clearZ = floorZ + 1; clearZ < floorZ + 6; clearZ++) {
+                    gridWorld.setBlock(x, y, clearZ, GridWorld.BlockState.AIR);
+                }
+            }
+        }
+    }
+
     private void buildMultiLevelCastle(CastleLayout layout, int startX, int startY) {
         GridWorld.BlockState floorType = getFloorType(layout.wallType);
         GridWorld.BlockState stairType = getStairType(layout.wallType);
@@ -442,6 +478,8 @@ public class WorldContext {
         buildSouthTurretWall(layout, startX, startY);
         // Add second-level walkway connecting the south turrets
         buildSouthWalkway(layout, startX, startY);
+        // Build second floor connecting the walkways
+        buildSecondFloor(layout, startX, startY);
     }
 
     private void buildFrontWall(CastleLayout layout, int startX, int startY) {
