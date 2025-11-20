@@ -2,6 +2,8 @@ package com.castlewar.entity;
 
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
+import com.castlewar.ai.AiContext;
+import com.castlewar.ai.guard.GuardAgent;
 import com.castlewar.world.GridWorld;
 
 public class Guard extends Unit {
@@ -13,14 +15,18 @@ public class Guard extends Unit {
     private static final String[] NAMES = {"Guard", "Sentry", "Warden", "Protector", "Shield", "Knight"};
 
     private final GuardType type;
+    private final GuardAgent aiAgent;
     private Entity targetToFollow; // For Entourage
     private float moveTimer = 0f;
     private Vector3 targetPosition = null;
     private Vector3 facing = new Vector3(1, 0, 0);
+    private transient GridWorld aiWorldSnapshot;
+    private transient float aiDeltaSnapshot;
 
     public Guard(float x, float y, float z, Team team, GuardType type) {
         super(x, y, z, team, generateName(type), 80f, 50f);
         this.type = type;
+        this.aiAgent = new GuardAgent(this, new AiContext());
     }
 
     private static String generateName(GuardType type) {
@@ -43,6 +49,19 @@ public class Guard extends Unit {
             return;
         }
 
+        this.aiWorldSnapshot = world;
+        this.aiDeltaSnapshot = delta;
+        aiAgent.update(delta);
+    }
+
+    public void runLegacyBehavior() {
+        if (aiWorldSnapshot == null) {
+            return;
+        }
+        legacyUpdate(aiDeltaSnapshot, aiWorldSnapshot);
+    }
+
+    private void legacyUpdate(float delta, GridWorld world) {
         if (velocity.len2() > 0.1f) {
             facing.set(velocity).nor();
             facing.z = 0; 

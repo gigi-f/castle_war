@@ -20,5 +20,6 @@ public abstract class Entity {
     public float getY() { return position.y; }
     public float getZ() { return position.z; }
     public Vector3 getPosition() { return position; }
+    public Vector3 getVelocity() { return velocity; }
     public Team getTeam() { return team; }
 }

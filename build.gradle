@@ -1,5 +1,6 @@
 ext {
     gdxVersion = '1.12.1'
+    gdxAiVersion = '1.8.2'
     junitVersion = '5.11.0'
 }
 
