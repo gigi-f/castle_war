@@ -41,5 +41,5 @@
     "fadeDepthFactor": 0.12
   },
   "files": ["README.md","copilot-instructions.md","repo-map.json","GAME_MANUAL.md","context-index.json"],
-  "usage": "AI agents: load context-index.json + repo-map.json; ALWAYS apply game-design best practices, perform necessary research, and refine layman instructions into precise game-dev terminology."
+  "usage": "AI agents: load context-index.json + repo-map.json; apply game-design & engineering best practices; proactively search for perf issues, memory leaks, anti-patterns; use SOLID, profiling, and modular refactors."
 }

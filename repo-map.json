@@ -108,6 +108,6 @@
     "README": "High-level project overview (AI: use game-design best practices; research before implementing)",
     "copilot-instructions.md": "Prompt + architecture guidance (contains meta mandate for expert game-design research)",
     "GAME_MANUAL.md": "Player-facing controls & mechanics (interpret & refine layman phrasing)",
-    "repo-map.json": "Machine-readable index (embed best-practice reminder)"
+    "repo-map.json": "Machine-readable index (best-practice reminder: audit perf, memory, architecture, SOLID)"
   }
 }
