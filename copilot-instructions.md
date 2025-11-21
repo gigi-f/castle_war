@@ -74,3 +74,5 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
 - repo-map.json added: machine-readable index of config fields, controls, entities, rendering constants.
 - GAME_MANUAL.md added: authoritative player controls + mechanics reference.
 Always update BOTH when adding/removing inputs, entity types, or simulation parameters.
+
+- context-index.json added: lightweight auto-index of enums, key bindings, constants for prompt compression.

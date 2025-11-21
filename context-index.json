@@ -1,0 +1,45 @@
+{
+  "commit": "e75d851f97c1509463be665e41fbf38f7a65760d",
+  "generated": "2025-11-21T15:15:53Z",
+  "enums": {
+    "Team": ["WHITE", "BLACK"],
+    "Guard.GuardType": ["ENTOURAGE", "PATROL"],
+    "GridWorld.BlockState": ["AIR","GRASS","DIRT","STONE","CASTLE_WHITE","CASTLE_BLACK","CASTLE_WHITE_FLOOR","CASTLE_BLACK_FLOOR","CASTLE_WHITE_STAIR","CASTLE_BLACK_STAIR","DOOR","WINDOW","WATER","MOUNTAIN_ROCK"],
+    "BlockType": ["AIR","GRASS","DIRT","STONE","CASTLE_WHITE","CASTLE_BLACK"],
+    "DualViewScreen.ViewMode": ["TOP_DOWN","SIDE_SCROLLER","ISOMETRIC","FIRST_PERSON"]
+  },
+  "controls": {
+    "keys": [",",".","[","]","/","m","i","-","=","LEFT","RIGHT","UP","DOWN","W","A","S","D","c","x","F","TAB","ENTER","MOUSE_LEFT"],
+    "descriptionsRef": "See repo-map.json.controls.global and GAME_MANUAL.md"
+  },
+  "simulationConfig": {
+    "fields": {
+      "worldWidth": 200,
+      "worldDepth": 120,
+      "worldHeight": 64,
+      "castleWidth": 60,
+      "castleDepth": 40,
+      "castleLevels": 8,
+      "castleRearMargin": 20
+    }
+  },
+  "constants": {
+    "WorldContext": {
+      "EDGE_MARGIN": 20,
+      "MIN_BATTLEFIELD_WIDTH": 180
+    },
+    "DualViewScreen": {
+      "SIDE_VIEW_MIN_ZOOM": 0.5,
+      "SIDE_VIEW_MAX_ZOOM": 3.0,
+      "SIDE_VIEW_ZOOM_STEP": 0.15,
+      "isoZoomInitial": 5.0
+    }
+  },
+  "rendering": {
+    "blockSize": 10,
+    "opacity": {"lowerLayer": 0.5},
+    "fadeDepthFactor": 0.12
+  },
+  "files": ["README.md","copilot-instructions.md","repo-map.json","GAME_MANUAL.md","context-index.json"],
+  "usage": "AI agents: load context-index.json + repo-map.json to build prompt scaffolds; keep them updated when enums/controls/constants change."
+}
