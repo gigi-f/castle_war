@@ -56,6 +56,31 @@ public class WorldContext {
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
 
+    public static final class CastleBounds {
+        private final int minX;
+        private final int maxX;
+        private final int minY;
+        private final int maxY;
+        private final int minZ;
+        private final int maxZ;
+
+        public CastleBounds(int minX, int maxX, int minY, int maxY, int minZ, int maxZ) {
+            this.minX = minX;
+            this.maxX = maxX;
+            this.minY = minY;
+            this.maxY = maxY;
+            this.minZ = minZ;
+            this.maxZ = maxZ;
+        }
+
+        public int getMinX() { return minX; }
+        public int getMaxX() { return maxX; }
+        public int getMinY() { return minY; }
+        public int getMaxY() { return maxY; }
+        public int getMinZ() { return minZ; }
+        public int getMaxZ() { return maxZ; }
+    }
+
     private final List<Entity> entities;
 
     private float leftCastleGateX;
@@ -64,6 +89,8 @@ public class WorldContext {
     private float rightCastleGateY;
     private int battlefieldStartX;
     private int battlefieldEndX;
+    private CastleBounds whiteCastleBounds;
+    private CastleBounds blackCastleBounds;
 
     public WorldContext(SimulationConfig config) {
         this.config = config;
@@ -209,6 +236,10 @@ public class WorldContext {
         return totalVerticalBlocks;
     }
 
+    public CastleBounds getCastleBounds(Team team) {
+        return team == Team.WHITE ? whiteCastleBounds : blackCastleBounds;
+    }
+
     public void update(float delta) {
         // Update AI and Physics
         for (Entity entity : entities) {
@@ -269,6 +300,14 @@ public class WorldContext {
         }
 
         buildMultiLevelCastle(leftLayout, leftStartX, leftStartY);
+        whiteCastleBounds = new CastleBounds(
+            leftStartX,
+            leftStartX + leftLayout.width - 1,
+            leftStartY,
+            leftStartY + leftLayout.height - 1,
+            0,
+            leftLayout.battlementLevel + 1
+        );
         spawnKing(leftLayout, leftStartX, leftStartY, Team.WHITE);
         
         leftCastleGateX = leftLayout.gateOnRight
@@ -279,6 +318,14 @@ public class WorldContext {
 
         if (rightLayout != null && rightStartX >= 0) {
             buildMultiLevelCastle(rightLayout, rightStartX, rightStartY);
+            blackCastleBounds = new CastleBounds(
+                rightStartX,
+                rightStartX + rightLayout.width - 1,
+                rightStartY,
+                rightStartY + rightLayout.height - 1,
+                0,
+                rightLayout.battlementLevel + 1
+            );
             spawnKing(rightLayout, rightStartX, rightStartY, Team.BLACK);
             
             rightCastleGateX = rightLayout.gateOnRight
@@ -287,6 +334,7 @@ public class WorldContext {
             rightCastleGateY = rightStartY + rightLayout.height / 2f;
             battlefieldEndX = rightStartX;
         } else {
+            blackCastleBounds = whiteCastleBounds;
             rightCastleGateX = leftCastleGateX;
             rightCastleGateY = leftCastleGateY;
             battlefieldEndX = worldWidth - horizontalMargin;

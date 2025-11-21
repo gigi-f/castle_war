@@ -6,6 +6,7 @@ import com.castlewar.ai.AiContext;
 import com.castlewar.ai.guard.GuardAgent;
 import com.castlewar.ai.guard.GuardState;
 import com.castlewar.simulation.WorldContext;
+import com.castlewar.simulation.WorldContext.CastleBounds;
 import com.castlewar.world.GridWorld;
 
 public class Guard extends Unit {
@@ -16,6 +17,8 @@ public class Guard extends Unit {
 
     private static final String[] NAMES = {"Guard", "Sentry", "Warden", "Protector", "Shield", "Knight"};
     private static final float ALERT_MEMORY_DURATION = 5f;
+    private static final int SEARCH_ATTEMPTS = 12;
+    private static final float MIN_PATROL_SPACING = 8f;
 
     private final GuardType type;
     private final GuardAgent aiAgent;
@@ -27,6 +30,7 @@ public class Guard extends Unit {
     private boolean hasLastKnownEnemy;
     private float alertMemoryTimer;
     private final Vector3 tempVector = new Vector3();
+    private final Vector3 separationVector = new Vector3();
     private transient float aiDeltaSnapshot;
 
     public Guard(float x, float y, float z, Team team, GuardType type, WorldContext worldContext) {
@@ -97,6 +101,7 @@ public class Guard extends Unit {
             velocity.y = 0;
             moveTimer -= delta;
         }
+        applyPatrolSeparation();
     }
 
     public boolean isMoveTimerReady() {
@@ -145,7 +150,15 @@ public class Guard extends Unit {
     }
 
     public void patrol(GridWorld world) {
-        // Similar to King's wander logic
+        if (type == GuardType.PATROL) {
+            Vector3 strategicTarget = pickCastleSearchTarget(world);
+            if (strategicTarget != null) {
+                targetPosition = strategicTarget;
+                return;
+            }
+        }
+
+        // Fallback wander similar to King for tight quarters
         int currentX = Math.round(position.x);
         int currentY = Math.round(position.y);
         int currentZ = Math.round(position.z);
@@ -315,5 +328,114 @@ public class Guard extends Unit {
 
     public void changeState(GuardState nextState) {
         aiAgent.changeState(nextState);
+    }
+
+    private Vector3 pickCastleSearchTarget(GridWorld world) {
+        AiContext ctx = aiAgent.getContext();
+        if (ctx == null) {
+            return null;
+        }
+        WorldContext worldContext = ctx.getWorldContext();
+        if (worldContext == null) {
+            return null;
+        }
+        CastleBounds bounds = worldContext.getCastleBounds(team);
+        if (bounds == null) {
+            return null;
+        }
+        Vector3 best = null;
+        float bestScore = Float.NEGATIVE_INFINITY;
+        int maxZ = Math.min(world.getHeight() - 1, bounds.getMaxZ());
+        int minZ = Math.max(0, bounds.getMinZ());
+        for (int attempt = 0; attempt < SEARCH_ATTEMPTS; attempt++) {
+            int sampleX = MathUtils.random(bounds.getMinX(), bounds.getMaxX());
+            int sampleY = MathUtils.random(bounds.getMinY(), bounds.getMaxY());
+            Vector3 navigable = findNavigableTile(world, sampleX, sampleY, minZ, maxZ);
+            if (navigable == null) {
+                continue;
+            }
+            AiContext context = aiAgent.getContext();
+            float spacingScore = computePatrolSpacingScore(navigable, context);
+            if (spacingScore < MIN_PATROL_SPACING && MathUtils.randomBoolean(0.6f)) {
+                continue;
+            }
+            float distanceScore = navigable.dst(position);
+            float score = spacingScore * 0.7f + distanceScore * 0.25f + MathUtils.random();
+            if (score > bestScore) {
+                bestScore = score;
+                if (best == null) {
+                    best = new Vector3();
+                }
+                best.set(navigable);
+            }
+        }
+        return best;
+    }
+
+    private Vector3 findNavigableTile(GridWorld world, int x, int y, int minZ, int maxZ) {
+        for (int z = maxZ; z >= minZ; z--) {
+            Vector3 move = getValidMoveTarget(world, x, y, z);
+            if (move != null) {
+                return move;
+            }
+        }
+        return null;
+    }
+
+    private float computePatrolSpacingScore(Vector3 candidate, AiContext ctx) {
+        if (ctx == null) {
+            return 0f;
+        }
+        float minDist = Float.MAX_VALUE;
+        for (Entity entity : ctx.getEntities()) {
+            if (!(entity instanceof Guard other) || other == this || other.getTeam() != this.team) {
+                continue;
+            }
+            if (other.type != GuardType.PATROL) {
+                continue;
+            }
+            float dist = candidate.dst(other.getPosition());
+            if (dist < minDist) {
+                minDist = dist;
+            }
+        }
+        if (minDist == Float.MAX_VALUE) {
+            return MIN_PATROL_SPACING * 2f;
+        }
+        return minDist;
+    }
+
+    private void applyPatrolSeparation() {
+        if (type != GuardType.PATROL) {
+            return;
+        }
+        AiContext ctx = aiAgent.getContext();
+        if (ctx == null) {
+            return;
+        }
+        separationVector.setZero();
+        for (Entity entity : ctx.getEntities()) {
+            if (!(entity instanceof Guard other) || other == this || other.getTeam() != this.team) {
+                continue;
+            }
+            if (other.type != GuardType.PATROL) {
+                continue;
+            }
+            float dist2 = position.dst2(other.getPosition());
+            if (dist2 < MIN_PATROL_SPACING * MIN_PATROL_SPACING && dist2 > 0.0001f) {
+                float dist = (float)Math.sqrt(dist2);
+                float strength = (MIN_PATROL_SPACING - dist) / MIN_PATROL_SPACING;
+                tempVector.set(position).sub(other.getPosition());
+                if (!tempVector.isZero(0.0001f)) {
+                    tempVector.nor().scl(strength);
+                    separationVector.add(tempVector);
+                }
+            }
+        }
+        if (!separationVector.isZero(0.001f)) {
+            separationVector.nor().scl(1.2f);
+            velocity.x += separationVector.x;
+            velocity.y += separationVector.y;
+        }
     }
 }
