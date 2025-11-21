@@ -91,6 +91,8 @@ public class WorldContext {
     }
 
     private final List<Entity> entities;
+    private final AISystem aiSystem;
+    private final CleanupSystem cleanupSystem;
 
     private float leftCastleGateX;
     private float leftCastleGateY;
@@ -109,6 +111,8 @@ public class WorldContext {
             (int) config.getWorldHeight()
         );
         this.entities = new ArrayList<>();
+        this.aiSystem = new AISystem(entities, gridWorld);
+        this.cleanupSystem = new CleanupSystem(entities);
         this.castleLayouts = createCastleLayouts();
         this.undergroundDepth = gridWorld.getHeight();
         this.totalVerticalBlocks = gridWorld.getHeight() + undergroundDepth;
@@ -250,25 +254,8 @@ public class WorldContext {
     }
 
     public void update(float delta) {
-        // Update AI and Physics
-        for (Entity entity : entities) {
-            if (entity instanceof com.castlewar.entity.Unit) {
-                com.castlewar.entity.Unit unit = (com.castlewar.entity.Unit) entity;
-                if (!unit.isCorpse()) {
-                    unit.scanForEnemies(entities, gridWorld);
-                }
-            }
-            if (entity instanceof Assassin) {
-                Assassin assassin = (Assassin) entity;
-                if (!assassin.isCorpse()) {
-                    assassin.checkForGuards(entities, gridWorld, delta);
-                }
-            }
-            entity.update(delta, gridWorld);
-        }
-        
-        // Remove expired corpses
-        entities.removeIf(e -> e instanceof com.castlewar.entity.Unit && ((com.castlewar.entity.Unit)e).shouldDespawn());
+        aiSystem.update(delta);
+        cleanupSystem.update(delta);
     }
 
     public List<Entity> getEntities() {
