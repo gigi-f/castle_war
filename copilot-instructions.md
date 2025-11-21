@@ -68,3 +68,9 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
 - Short term: interactive castle editing (placing/removing blocks), highlight stairs/elevators between layers, add more animated entities for depth perception.
 - Mid term: texture/gradient improvements, lighting cues for underground, and UI labels that show absolute coordinates.
 - Long term: return to voxel/mesh rendering once the 2D UX is perfected; keep current code ready for incremental upgrades (e.g., replacing `ShapeRenderer` with batches of sprites).
+
+
+### Repository Map & Manual
+- repo-map.json added: machine-readable index of config fields, controls, entities, rendering constants.
+- GAME_MANUAL.md added: authoritative player controls + mechanics reference.
+Always update BOTH when adding/removing inputs, entity types, or simulation parameters.

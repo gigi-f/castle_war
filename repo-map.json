@@ -1,0 +1,113 @@
+{
+  "version": "2025-11-21",
+  "modules": {
+    "core": {
+      "path": "core/src/main/java/com/castlewar",
+      "keyClasses": [
+        "CastleWarGame",
+        "screens/DualViewScreen",
+        "simulation/SimulationConfig",
+        "simulation/WorldContext",
+        "world/GridWorld",
+        "renderer/GridRenderer",
+        "renderer/UnitRenderer",
+        "entity/King",
+        "entity/Guard",
+        "entity/Assassin",
+        "entity/Player"
+      ]
+    },
+    "desktop": {
+      "path": "desktop/src/main/java/com/castlewar/desktop",
+      "keyClasses": ["DesktopLauncher"]
+    }
+  },
+  "simulationConfig": {
+    "fields": {
+      "worldWidth": {"default": 200, "min": 16, "description": "X dimension of world (blocks)"},
+      "worldDepth": {"default": 120, "min": 16, "description": "Y dimension of world (blocks)"},
+      "worldHeight": {"default": 64, "min": 8, "description": "Positive Z height (above ground)"},
+      "castleWidth": {"default": 60, "min": 12},
+      "castleDepth": {"default": 40, "min": 12},
+      "castleLevels": {"default": 8, "min": 2, "note": "Scaled ×3 internally for spiral ramp system"},
+      "castleRearMargin": {"default": 20, "min": 2}
+    }
+  },
+  "worldContext": {
+    "constants": {
+      "EDGE_MARGIN": 20,
+      "MIN_BATTLEFIELD_WIDTH": 180
+    },
+    "derived": {
+      "undergroundDepth": "= gridWorld.height (mirrors sky height)",
+      "totalVerticalBlocks": "= gridWorld.height + undergroundDepth",
+      "battlefieldStartX": "= leftCastleGateX + castleWidth (post layout correction)",
+      "battlefieldEndX": "= rightCastleGateX - castleWidth (post layout correction)"
+    },
+    "castleLayout": {
+      "fields": ["width","height","interiorLevels","battlementLevel","roofLevel","turretTopLevel","roomFloors","courtyardMargin","stairWidth","stairSpacing","gateOnRight","wallType"],
+      "notes": "castleLevels inflated (×3) to create multi-block vertical floors; battlementLevel = interiorLevels + 1"
+    }
+  },
+  "gridWorld": {
+    "dimensions": ["width","depth","height"],
+    "blockStates": [
+      "AIR","GRASS","DIRT","STONE","CASTLE_WHITE","CASTLE_BLACK","CASTLE_WHITE_FLOOR","CASTLE_BLACK_FLOOR","CASTLE_WHITE_STAIR","CASTLE_BLACK_STAIR","DOOR","WINDOW","WATER","MOUNTAIN_ROCK"
+    ],
+    "semantics": {
+      "negativeZ": "Procedural DIRT/STONE (underground)",
+      "WINDOW": "Transparent (line of sight passes)",
+      "STAIR": "Semi-transparent for LOS (treated non-opaque)",
+      "WATER": "Non-solid"
+    }
+  },
+  "entities": {
+    "commonFields": ["x","y","z","team","hp","maxHp"],
+    "types": {
+      "King": {"spawns": "Center of castle first floor", "guardsSpawned": 4},
+      "Guard": {"subtypes": ["ENTOURAGE","PATROL"], "behavior": "Follow king or patrol battlements"},
+      "Assassin": {"targets": ["enemy king","enemy gate"], "behavior": "Moves across battlefield; scans for guards"},
+      "Player": {"mode": "FIRST_PERSON only", "spawnZ": "height + 5 then falls"}
+    }
+  },
+  "viewModes": ["TOP_DOWN","SIDE_SCROLLER","ISOMETRIC","FIRST_PERSON"],
+  "controls": {
+    "global": {
+      "COMMA": "Top view: layer down",
+      "PERIOD": "Top view: layer up",
+      "LEFT_BRACKET": "Side slice -1 (or iso side slice -1)",
+      "RIGHT_BRACKET": "Side slice +1 (or iso side slice +1)",
+      "SLASH": "Toggle TOP_DOWN/SIDE_SCROLLER (if allowViewToggle)",
+      "M": "Toggle split view (if allowSplitView)",
+      "I": "Enter/exit ISOMETRIC (disables split)",
+      "MINUS": "Zoom out (side or iso)",
+      "EQUALS": "Zoom in (side or iso)",
+      "ARROWS": "Pan side camera",
+      "WASD": "Pan iso camera",
+      "C": "Toggle compass HUD",
+      "X": "Toggle X-Ray (entity visibility through layers)",
+      "F": "Enter/exit FIRST_PERSON (locks mouse)",
+      "TAB": "Cycle focused unit",
+      "ENTER": "Select focused unit",
+      "MOUSE_LEFT": "Select unit / rotate iso when dragging",
+      "MOUSE_DRAG_LEFT": "Rotate isometric view (held)"
+    },
+    "firstPerson": {
+      "(not enumerated here)": "Player update logic inside Player entity"
+    }
+  },
+  "rendering": {
+    "blockSizePixels": 10,
+    "sideViewZoomRange": [0.5,3.0],
+    "isoZoomInitial": 5,
+    "isoZoomRange": [0.1,30],
+    "fadeDepthFactor": 0.12,
+    "lowerLayerOpacity": 0.5
+  },
+  "files": {
+    "README": "High-level project overview",
+    "copilot-instructions.md": "Prompt + architecture guidance",
+    "GAME_MANUAL.md": "Player-facing controls & mechanics",
+    "repo-map.json": "Machine-readable index (this file)"
+  }
+}
