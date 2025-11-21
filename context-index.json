@@ -41,5 +41,5 @@
     "fadeDepthFactor": 0.12
   },
   "files": ["README.md","copilot-instructions.md","repo-map.json","GAME_MANUAL.md","context-index.json"],
-  "usage": "AI agents: load context-index.json + repo-map.json to build prompt scaffolds; keep them updated when enums/controls/constants change."
+  "usage": "AI agents: load context-index.json + repo-map.json; ALWAYS apply game-design best practices, perform necessary research, and refine layman instructions into precise game-dev terminology."
 }

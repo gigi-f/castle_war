@@ -105,9 +105,9 @@
     "lowerLayerOpacity": 0.5
   },
   "files": {
-    "README": "High-level project overview",
-    "copilot-instructions.md": "Prompt + architecture guidance",
-    "GAME_MANUAL.md": "Player-facing controls & mechanics",
-    "repo-map.json": "Machine-readable index (this file)"
+    "README": "High-level project overview (AI: use game-design best practices; research before implementing)",
+    "copilot-instructions.md": "Prompt + architecture guidance (contains meta mandate for expert game-design research)",
+    "GAME_MANUAL.md": "Player-facing controls & mechanics (interpret & refine layman phrasing)",
+    "repo-map.json": "Machine-readable index (embed best-practice reminder)"
   }
 }

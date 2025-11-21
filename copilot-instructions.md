@@ -1,5 +1,7 @@
 ## Castle War – Copilot Instructions
 UPDATE THIS FILE AFTER EVERY PROMPT!!!
+IMPORTANT META NOTE: AI agents must apply professional game-design best practices at all times—perform external/domain research where needed (combat balance, terrain generation, AI behavior, UX). Instructions herein may use layman terms; prefer precise game-dev terminology (e.g., cohesion, DPS curves, area denial, affordances) when implementing. Always exercise expert judgement rather than blindly mirroring text. Treat this as a living design document; challenge unclear specs and evolve systems toward emergent, balanced play.
+
 
 ### Core vision (current build)
 - Deliver a readable, layered castle sandbox rendered on a 2D grid. The player can inspect tall castles, moats, and underground layers from both a top-down slice view and a side-scroller profile.
