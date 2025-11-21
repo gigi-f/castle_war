@@ -76,3 +76,53 @@ UPDATE THIS FILE AFTER EVERY PROMPT!!!
 Always update BOTH when adding/removing inputs, entity types, or simulation parameters.
 
 - context-index.json added: lightweight auto-index of enums, key bindings, constants for prompt compression.
+
+
+### Expanded Battlefield & Unit Roadmap
+Phase 1 – Procedural Terrain Foundation
+- Noise-driven elevation (Perlin + ridge noise) producing hills, valleys, choke points; classify tiles (PLAIN, HILL, FOREST, SWAMP) affecting movement & visibility.
+- Dynamic path-cost map and cover map (forest grants stealth, hill grants range bonus, swamp slows heavy units).
+- Destructible castle blocks: add hitpoints per block type; siege damage propagates (trebuchet splash weakens adjacent walls, ram focuses gate integrity).
+
+Phase 2 – Core New Units
+- Archer: High range, low armor; bonus vs exposed units; weak in melee; elevation increases range.
+- Spearman: Counter to Cavalry (reach bonus); average speed; vulnerable to archers.
+- Cavalry (Horse-mounted Knight): High charge damage & speed on plains; penalty in forest/swamp; vulnerable to spears and chokepoints.
+- Sapper: Places explosives at walls; weak in open combat; excels vs static defenses; countered by guards/patrols.
+- Trebuchet Crew (Siege Engine): Stationary build requiring setup time; very high area wall damage; vulnerable to assassins & cavalry flanks.
+- Battering Ram Team (Vehicle): Mobile gate breacher with frontal damage absorption; slow; weak to fire/oil hazards and sappers.
+- Healer (Priest/Medic): Restores HP over time in small radius; low offense; priority target for assassins.
+- Scout: High vision radius & speed; reveals stealth units; fragile.
+- Assassin (existing): Gains backstab multiplier; countered by Scouts & guard patrol density.
+
+Phase 3 – Tactical Interaction Mechanics
+- Morale system: Nearby King/Healer boosts morale; heavy siege impacts defender morale; low morale reduces attack speed or causes retreat.
+- Formation bonuses: Spearmen line grants +block chance vs cavalry; shield wall reduces arrow damage; cavalry wedge increases charge penetration.
+- Terrain modifiers: Hill = +range/+vision, Forest = stealth & reduced cavalry speed, Swamp = movement penalty & stamina drain, Courtyard = neutral, Battlements = projectile accuracy bonus.
+- Supply lines: Trebuchet and Ram consume supplies (ammo, structural integrity); Scouts can cut supply nodes lowering siege efficiency.
+
+Phase 4 – Advanced / Emergent Systems
+- Fire propagation: Sapper explosives or fire arrows ignite wooden floors; spreading lowers local morale and damages units over time.
+- Rubble generation: Destroyed wall blocks create difficult terrain (slows movement, provides partial cover).
+- Dynamic weather: Rain lowers fire spread and reduces ranged accuracy; fog reduces vision; wind slightly alters trebuchet scatter.
+- Adaptive AI squads: Group behavior (escort healer, defend siege engines, flank weakened morale clusters).
+
+Phase 5 – Balancing & Counter Layers
+Matrix principles:
+- Archers > Sappers (range pickoff), Cavalry > Archers (closing speed), Spearmen > Cavalry (charge denial), Sappers > Static Walls, Trebuchet > Walls/Towers, Assassin > Trebuchet Crew/Healer, Scout > Assassin/Sapper, Ram > Gate, Fire > Ram (wood) & interior floors.
+- Introduce soft counters (terrain + morale) so positioning overrides raw stats.
+
+Implementation Notes
+- Extend GridWorld with terrain type & block HP metadata arrays.
+- Add UnitRole enum and modular ability components (ActiveAbility, PassiveAura, ChargeAttack, SiegeAction).
+- Central CombatResolver handling damage types: Physical, Piercing, Siege, Fire, Morale.
+- Event bus for emergent triggers (OnWallBreached, OnFireSpread, OnMoraleBreak).
+- Pathfinding: Weighted A* over dynamic cost map (terrain + rubble + zone of control from formations).
+
+Balancing Loop
+1. Implement base stats & damage types.
+2. Simulate scripted skirmishes (automated test harness) to collect TTK, breach time, morale collapse frequency.
+3. Adjust coefficients (terrain multipliers, formation bonuses) aiming for multiple viable strategies (siege focus, infiltration, field dominance).
+
+Outcome
+A layered battlefield where composition, positioning, and timing yield emergent victories rather than single-unit dominance.
