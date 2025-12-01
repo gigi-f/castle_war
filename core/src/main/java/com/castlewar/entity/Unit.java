@@ -3,13 +3,8 @@ package com.castlewar.entity;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.MathUtils;
 import com.castlewar.world.GridWorld;
-import java.util.PriorityQueue;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Collections;
 
 public abstract class Unit extends Entity {
     private static final float DAMAGE_FLASH_DURATION = 0.5f;
@@ -20,6 +15,9 @@ public abstract class Unit extends Entity {
     private static final float MIN_VERTICAL_RECOIL = 2.5f;
     private static final float AWARENESS_ICON_DURATION = 0.85f;
     private static final float AWARENESS_FREEZE_DURATION = 0.45f;
+    private static final float CURIOUS_STATE_DURATION = 5f;
+    private static final float SURPRISED_STATE_DURATION = 5f;
+    private static final float AWARENESS_REARM_DURATION = 60f;
 
     public enum AwarenessIcon {
         NONE(""),
@@ -37,13 +35,18 @@ public abstract class Unit extends Entity {
         }
     }
 
+    public enum AwarenessState {
+        RELAXED,
+        CURIOUS,
+        SURPRISED
+    }
+
     protected String name;
     protected float hp;
     protected float maxHp;
     protected float stamina;
     protected float maxStamina;
-    protected Vector3 targetPosition;
-    protected List<Vector3> currentPath = new ArrayList<>();
+    protected final Vector3 facing = new Vector3(1, 0, 0);
 
     public Unit(float x, float y, float z, Team team, String name, float maxHp, float maxStamina) {
         super(x, y, z, team);
@@ -57,8 +60,34 @@ public abstract class Unit extends Entity {
     public String getName() { return name; }
     public float getHp() { return hp; }
     public float getMaxHp() { return maxHp; }
+    public Vector3 getFacing() { return facing; }
 
     protected boolean canClimb = false;
+
+    // Simple movement/targeting fields (pathfinding removed)
+    protected Vector3 targetPosition = null;
+
+    public Vector3 getTargetPosition() {
+        return targetPosition;
+    }
+
+    public void setTargetPosition(Vector3 target) {
+        this.targetPosition = target;
+    }
+
+    public void clearTargetPosition(String reason) {
+        this.targetPosition = null;
+    }
+
+    protected boolean isStair(GridWorld.BlockState block) {
+        return block == GridWorld.BlockState.CASTLE_WHITE_STAIR ||
+               block == GridWorld.BlockState.CASTLE_BLACK_STAIR;
+    }
+    
+    protected boolean isFloor(GridWorld.BlockState block) {
+         return block == GridWorld.BlockState.CASTLE_WHITE_FLOOR ||
+                block == GridWorld.BlockState.CASTLE_BLACK_FLOOR;
+    }
 
     public boolean isValidMove(GridWorld world, int x, int y, int z) {
         // Bounds check
@@ -67,7 +96,6 @@ public abstract class Unit extends Entity {
         }
 
         GridWorld.BlockState targetBlock = world.getBlock(x, y, z);
-        
         // Check if target is passable
         if (world.isOpaque(targetBlock)) {
             return false;
@@ -93,24 +121,14 @@ public abstract class Unit extends Entity {
         }
         
         // 2. Check hop (move to x,y,z+1)
-        // Condition: Target (x,y,z) is solid (obstacle), but (x,y,z+1) is air.
-        // And we are moving from current Z.
-        // Actually, we are at current pos. We want to move to neighbor (x,y).
-        // If (x,y,z) is blocked, try (x,y,z+1).
-        
         GridWorld.BlockState targetBlock = world.getBlock(x, y, z);
         if (world.isSolid(targetBlock)) {
-            // Obstacle. Check above.
             if (z + 1 < world.getHeight()) {
                 if (isValidMove(world, x, y, z + 1)) {
                     return new Vector3(x, y, z + 1);
                 }
             }
         }
-        
-        // 3. Check drop (move to x,y,z-1)?
-        // If (x,y,z) is AIR and below is AIR, maybe we fall/drop?
-        // For now, let's just handle hopping up.
         
         return null;
     }
@@ -124,14 +142,31 @@ public abstract class Unit extends Entity {
         return false;
     }
 
-    protected boolean isStair(GridWorld.BlockState block) {
-        return block == GridWorld.BlockState.CASTLE_WHITE_STAIR || 
-               block == GridWorld.BlockState.CASTLE_BLACK_STAIR;
-    }
-    
-    protected boolean isFloor(GridWorld.BlockState block) {
-         return block == GridWorld.BlockState.CASTLE_WHITE_FLOOR ||
-                block == GridWorld.BlockState.CASTLE_BLACK_FLOOR;
+    /**
+     * Lightweight replacement for previous pathfinding: pick a direct navigable
+     * tile near the target and set it as `targetPosition`. Clears any stored path.
+     */
+    public void pickSmartMove(GridWorld world, Vector3 target) {
+        // no path storage any more — pick a single direct target
+        if (target == null) {
+            this.targetPosition = null;
+            return;
+        }
+        int tx = Math.round(target.x);
+        int ty = Math.round(target.y);
+        int tz = Math.round(target.z);
+
+        Vector3 candidate = getValidMoveTarget(world, tx, ty, tz);
+        if (candidate == null) {
+            // try at our current Z
+            candidate = getValidMoveTarget(world, tx, ty, Math.round(position.z));
+        }
+
+        if (candidate != null) {
+            this.targetPosition = candidate;
+        } else {
+            this.targetPosition = null;
+        }
     }
 
     // Combat stats
@@ -147,6 +182,10 @@ public abstract class Unit extends Entity {
     private AwarenessIcon awarenessIcon = AwarenessIcon.NONE;
     private float awarenessIconTimer = 0f;
     private float awarenessFreezeTimer = 0f;
+    private AwarenessState awarenessState = AwarenessState.RELAXED;
+    private float awarenessStateTimer = 0f;
+    private float awarenessCooldownTimer = 0f;
+    private AwarenessState awarenessLockState = AwarenessState.RELAXED;
 
     private final Vector3 knockbackImpulse = new Vector3();
     private final Vector3 knockbackPlanarDir = new Vector3();
@@ -249,135 +288,6 @@ public abstract class Unit extends Entity {
         }
     }
 
-    public void pickSmartMove(GridWorld world, Vector3 target) {
-        // If we have a path, follow it
-        if (currentPath != null && !currentPath.isEmpty()) {
-             Vector3 next = currentPath.get(0);
-             // Check if the next step is still valid/adjacent
-             if (position.dst(next) < 2.5f) {
-                 targetPosition = next;
-                 currentPath.remove(0);
-                 return;
-             } else {
-                 // Path invalid (too far or teleported), recalculate
-                 if (currentPath != null) currentPath.clear();
-             }
-        }
-        
-        // Calculate new path
-        currentPath = findPath(world, position, target);
-        if (currentPath != null && !currentPath.isEmpty()) {
-             targetPosition = currentPath.get(0);
-             currentPath.remove(0);
-        }
-    }
-
-    private List<Vector3> findPath(GridWorld world, Vector3 start, Vector3 end) {
-        PriorityQueue<Node> openSet = new PriorityQueue<>(Comparator.comparingDouble(Node::f));
-        Set<Node> closedSet = new HashSet<>();
-        
-        int sx = Math.round(start.x);
-        int sy = Math.round(start.y);
-        int sz = Math.round(start.z);
-        int ex = Math.round(end.x);
-        int ey = Math.round(end.y);
-        int ez = Math.round(end.z);
-        
-        Node startNode = new Node(sx, sy, sz, 0, Vector3.dst(sx, sy, sz, ex, ey, ez), null);
-        openSet.add(startNode);
-        
-        int iterations = 0;
-        int maxIterations = 5000; // Increased limit for larger maps
-        
-        Node bestNode = startNode;
-        float bestDist = startNode.h;
-        
-        while (!openSet.isEmpty() && iterations < maxIterations) {
-            Node current = openSet.poll();
-            iterations++;
-            
-            if (current.x == ex && current.y == ey && Math.abs(current.z - ez) <= 1) {
-                return reconstructPath(current);
-            }
-            
-            if (closedSet.contains(current)) continue;
-            closedSet.add(current);
-            
-            if (current.h < bestDist) {
-                bestDist = current.h;
-                bestNode = current;
-            }
-            
-            // Neighbors
-            // 1. Horizontal/Diagonal
-            int[][] offsets = {{1,0}, {-1,0}, {0,1}, {0,-1}};
-            for (int[] off : offsets) {
-                int nx = current.x + off[0];
-                int ny = current.y + off[1];
-                Vector3 move = getValidMoveTarget(world, nx, ny, current.z);
-                
-                if (move != null) {
-                    float g = current.g + Vector3.dst(current.x, current.y, current.z, move.x, move.y, move.z);
-                    float h = Vector3.dst(move.x, move.y, move.z, ex, ey, ez);
-                    openSet.add(new Node((int)move.x, (int)move.y, (int)move.z, g, h, current));
-                }
-            }
-            
-            // 2. Climbing (Vertical)
-            if (canClimb && isAdjacentToWall(world, current.x, current.y, current.z)) {
-                if (isValidMove(world, current.x, current.y, current.z + 1)) {
-                    float g = current.g + 1;
-                    float h = Vector3.dst(current.x, current.y, current.z + 1, ex, ey, ez);
-                    openSet.add(new Node(current.x, current.y, current.z + 1, g, h, current));
-                }
-            }
-        }
-        
-        // If path not found, return path to best node (closest to target)
-        if (bestNode != startNode) {
-            return reconstructPath(bestNode);
-        }
-        
-        return null;
-    }
-    
-    private List<Vector3> reconstructPath(Node node) {
-        List<Vector3> path = new ArrayList<>();
-        while (node.parent != null) {
-            path.add(new Vector3(node.x, node.y, node.z));
-            node = node.parent;
-        }
-        Collections.reverse(path);
-        return path;
-    }
-    
-    private static class Node {
-        int x, y, z;
-        float g, h;
-        Node parent;
-        
-        Node(int x, int y, int z, float g, float h, Node parent) {
-            this.x = x; this.y = y; this.z = z;
-            this.g = g; this.h = h;
-            this.parent = parent;
-        }
-        
-        float f() { return g + h; }
-        
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Node)) return false;
-            Node n = (Node)o;
-            return x == n.x && y == n.y && z == n.z;
-        }
-        
-        @Override
-        public int hashCode() {
-            return x * 31 * 31 + y * 31 + z;
-        }
-    }
-
     // Physics fields
     protected float speed = 4f;
     protected float gravity = 30f;
@@ -404,6 +314,19 @@ public abstract class Unit extends Entity {
             }
         }
 
+        if (awarenessStateTimer > 0f) {
+            awarenessStateTimer = Math.max(0f, awarenessStateTimer - delta);
+            if (awarenessStateTimer == 0f && awarenessState != AwarenessState.RELAXED) {
+                awarenessState = AwarenessState.RELAXED;
+            }
+        }
+        if (awarenessCooldownTimer > 0f) {
+            awarenessCooldownTimer = Math.max(0f, awarenessCooldownTimer - delta);
+            if (awarenessCooldownTimer == 0f) {
+                awarenessLockState = AwarenessState.RELAXED;
+            }
+        }
+
         if (isDead()) {
             corpseTimer += delta;
             applyCorpsePhysics(delta, world);
@@ -424,6 +347,12 @@ public abstract class Unit extends Entity {
         if (!knockbackImpulse.isZero(0.0001f)) {
             velocity.add(knockbackImpulse);
         }
+        
+        // Update facing if moving horizontally
+        if (velocity.x * velocity.x + velocity.y * velocity.y > 0.01f) {
+            facing.set(velocity.x, velocity.y, 0).nor();
+        }
+
         // Apply gravity
         velocity.z -= gravity * delta;
         
@@ -613,8 +542,14 @@ public abstract class Unit extends Entity {
             }
             return;
         }
+        AwarenessState requestedState = mapIconToState(icon);
+        if (!canTriggerAwarenessState(requestedState)) {
+            return;
+        }
+
         awarenessIcon = icon;
         awarenessIconTimer = AWARENESS_ICON_DURATION;
+        enterAwarenessState(requestedState);
         if (applyPause) {
             awarenessFreezeTimer = Math.max(awarenessFreezeTimer, AWARENESS_FREEZE_DURATION);
         }
@@ -623,10 +558,79 @@ public abstract class Unit extends Entity {
     public void clearAwarenessCue() {
         awarenessIcon = AwarenessIcon.NONE;
         awarenessIconTimer = 0f;
+        awarenessState = AwarenessState.RELAXED;
+        awarenessStateTimer = 0f;
+        awarenessCooldownTimer = 0f;
+        awarenessLockState = AwarenessState.RELAXED;
     }
 
     public boolean isStunned() {
         return hitStunTimer > 0f || awarenessFreezeTimer > 0f;
+    }
+
+    public AwarenessState getAwarenessState() {
+        return awarenessState;
+    }
+
+    public boolean isCuriousStateActive() {
+        return awarenessState == AwarenessState.CURIOUS && awarenessStateTimer > 0f;
+    }
+
+    public boolean isSurprisedStateActive() {
+        return awarenessState == AwarenessState.SURPRISED && awarenessStateTimer > 0f;
+    }
+
+    public void resetAwarenessCooldown() {
+        awarenessCooldownTimer = 0f;
+        awarenessState = AwarenessState.RELAXED;
+        awarenessStateTimer = 0f;
+        awarenessLockState = AwarenessState.RELAXED;
+    }
+
+    private AwarenessState mapIconToState(AwarenessIcon icon) {
+        return switch (icon) {
+            case ALERT -> AwarenessState.SURPRISED;
+            case INVESTIGATE -> AwarenessState.CURIOUS;
+            default -> AwarenessState.RELAXED;
+        };
+    }
+
+    private boolean canTriggerAwarenessState(AwarenessState requested) {
+        if (requested == AwarenessState.RELAXED) {
+            return true;
+        }
+        if (awarenessState == requested && awarenessStateTimer > 0f) {
+            return false;
+        }
+        if (awarenessCooldownTimer > 0f) {
+            int requestedRank = awarenessStateRank(requested);
+            int lockRank = awarenessStateRank(awarenessLockState);
+            if (requestedRank <= lockRank) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int awarenessStateRank(AwarenessState state) {
+        return switch (state) {
+            case SURPRISED -> 2;
+            case CURIOUS -> 1;
+            default -> 0;
+        };
+    }
+
+    private void enterAwarenessState(AwarenessState newState) {
+        awarenessState = newState;
+        switch (newState) {
+            case CURIOUS -> awarenessStateTimer = CURIOUS_STATE_DURATION;
+            case SURPRISED -> awarenessStateTimer = SURPRISED_STATE_DURATION;
+            default -> awarenessStateTimer = 0f;
+        }
+        if (newState != AwarenessState.RELAXED) {
+            awarenessCooldownTimer = AWARENESS_REARM_DURATION;
+            awarenessLockState = newState;
+        }
     }
 
     public float getDamageFlashAlpha() {

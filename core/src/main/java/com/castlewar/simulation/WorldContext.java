@@ -2,6 +2,7 @@ package com.castlewar.simulation;
 
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
+import com.castlewar.debug.AiDebugLog;
 import com.castlewar.entity.Assassin;
 import com.castlewar.entity.Entity;
 import com.castlewar.entity.Guard;
@@ -55,6 +56,7 @@ public class WorldContext {
     private final CastleLayout[] castleLayouts;
     private final int undergroundDepth;
     private final float totalVerticalBlocks;
+    private final AiDebugLog debugLog = new AiDebugLog();
 
     public static final class CastleBounds {
         private final int minX;
@@ -236,6 +238,10 @@ public class WorldContext {
         return totalVerticalBlocks;
     }
 
+    public AiDebugLog getDebugLog() {
+        return debugLog;
+    }
+
     public CastleBounds getCastleBounds(Team team) {
         return team == Team.WHITE ? whiteCastleBounds : blackCastleBounds;
     }
@@ -265,6 +271,8 @@ public class WorldContext {
     public List<Entity> getEntities() {
         return entities;
     }
+
+    
 
     private void buildCastles() {
         int worldWidth = gridWorld.getWidth();

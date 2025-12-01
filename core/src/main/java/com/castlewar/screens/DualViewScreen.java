@@ -19,8 +19,11 @@ import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
+import com.castlewar.ai.guard.GuardState;
+import com.castlewar.debug.AiDebugLog;
 import com.castlewar.entity.Assassin;
 import com.castlewar.entity.Entity;
 import com.castlewar.entity.Guard;
@@ -122,6 +125,7 @@ public class DualViewScreen implements Screen {
     private final List<Entity> fpsRenderBuffer = new ArrayList<>();
     private final Vector3 fpsLabelPosition = new Vector3();
     private final Color awarenessColor = new Color();
+    private final Vector3 aiDebugProjectVec = new Vector3();
     private static final Color BODY_NEUTRAL = new Color(0.82f, 0.82f, 0.86f, 1f);
     private static final Color BODY_DARK = new Color(0.18f, 0.18f, 0.22f, 1f);
     private static final Color WHITE_HAT_COLOR = new Color(0.95f, 0.85f, 0.15f, 1f);
@@ -131,6 +135,12 @@ public class DualViewScreen implements Screen {
     private static final float AWARENESS_ICON_SCALE = 4f;
     private static final Color ALERT_ICON_COLOR = new Color(1f, 0.82f, 0.25f, 1f);
     private static final Color INVESTIGATE_ICON_COLOR = new Color(0.55f, 0.9f, 1f, 1f);
+    private static final Color DEBUG_PATROL_COLOR = new Color(0.35f, 0.85f, 0.45f, 1f);
+    private static final Color DEBUG_ALERT_COLOR = new Color(1f, 0.7f, 0.2f, 1f);
+    private static final Color DEBUG_ENGAGE_COLOR = new Color(1f, 0.25f, 0.3f, 1f);
+    private static final Color DEBUG_FLEE_COLOR = new Color(0.6f, 0.5f, 1f, 1f);
+    private static final Color DEBUG_ENTOURAGE_COLOR = new Color(0.95f, 0.9f, 0.3f, 1f);
+    private static final int MAX_DEBUG_LOG_LINES = 6;
     
     // Current Z-level being viewed
     private int currentLayer;
@@ -148,6 +158,10 @@ public class DualViewScreen implements Screen {
     private boolean keyXPressed;
     private Entity selectedUnit;
     private Entity focusedUnit;
+    private boolean aiDebugOverlayEnabled = false;
+    private boolean aiDebugLoggingEnabled = true;
+    private boolean keyF2Pressed;
+    private boolean keyF3Pressed;
 
     public DualViewScreen(WorldContext worldContext, Options options) {
         this.worldContext = worldContext;
@@ -223,6 +237,8 @@ public class DualViewScreen implements Screen {
         keyRightBracketPressed = false;
         lastNonIsometricMode = viewMode;
         splitViewBeforeIsometric = splitViewEnabled;
+        AiDebugLog debugLog = worldContext.getDebugLog();
+        aiDebugLoggingEnabled = debugLog == null || debugLog.isEnabled();
     }
     
     private boolean isTopViewActive() {
@@ -263,6 +279,7 @@ public class DualViewScreen implements Screen {
         handleIsoZoomInput();
         handleIsoCameraPan(delta);
     handleCompassToggle();
+        handleAiDebugToggle();
         
         if (options.updatesSimulation) {
             worldContext.update(delta);
@@ -772,6 +789,7 @@ public class DualViewScreen implements Screen {
 
         renderSideSliceGuide();
         renderTopDownAwarenessIcons();
+        renderTopDownAiDebug();
     }
 
     private void renderSideScrollerFullView() {
@@ -835,6 +853,7 @@ public class DualViewScreen implements Screen {
 
         renderTopLayerGuide();
         renderSideAwarenessIcons();
+            renderSideAiDebug();
     }
 
     private void renderIsometricViewContents() {
@@ -1056,7 +1075,9 @@ public class DualViewScreen implements Screen {
                 .append(levelDesc)
                 .append(", side slice Y=")
                 .append(sideViewSlice)
-                .append("  (comma/period layers, '['/']' slices, WASD pan, -/= zoom, 'c' compass, 'x' xray, 'i' exit)");
+                .append("  (comma/period layers, '['/']' slices, WASD pan, -/= zoom, 'c' compass, 'x' xray, 'i' exit");
+            appendDebugHotkeys(builder);
+            builder.append(')');
             info = builder.toString();
         } else if (splitViewEnabled) {
             String topDesc = currentLayer < 0 ? "Underground " + (-currentLayer) : "Layer " + currentLayer;
@@ -1073,6 +1094,7 @@ public class DualViewScreen implements Screen {
                 builder.append(", 'm' toggle");
             }
             builder.append(", 'c' compass, 'x' xray, 'i' iso view");
+            appendDebugHotkeys(builder);
             builder.append(')');
             info = builder.toString();
         } else if (viewMode == ViewMode.TOP_DOWN) {
@@ -1091,6 +1113,7 @@ public class DualViewScreen implements Screen {
                 builder.append(", 'm' split");
             }
             builder.append(", 'c' compass, 'x' xray, 'i' iso view");
+            appendDebugHotkeys(builder);
             builder.append(')');
             info = builder.toString();
         } else {
@@ -1105,6 +1128,7 @@ public class DualViewScreen implements Screen {
                 builder.append(", 'm' split");
             }
             builder.append(", 'c' compass, 'x' xray, 'i' iso view");
+            appendDebugHotkeys(builder);
             builder.append(')');
             info = builder.toString();
         }
@@ -1149,6 +1173,9 @@ public class DualViewScreen implements Screen {
         
         // Reset scale
         overlayFont.getData().setScale(1f);
+        if (aiDebugOverlayEnabled) {
+            renderAiDebugLogPanel(scale);
+        }
         
         if (selectedUnit != null) {
             renderUnitModal(screenWidth, screenHeight, scale);
@@ -1832,6 +1859,138 @@ public class DualViewScreen implements Screen {
         }
     }
 
+    private void renderTopDownAiDebug() {
+        if (!aiDebugOverlayEnabled) {
+            return;
+        }
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        boolean began = false;
+        for (Entity entity : worldContext.getEntities()) {
+            Unit unit = null;
+            Color debugColor = null;
+            Vector3 target = null;
+            
+            if (entity instanceof Guard guard && !guard.isCorpse()) {
+                unit = guard;
+                debugColor = colorForGuardState(guard);
+                target = guard.getTargetPosition();
+            } else if (entity instanceof Assassin assassin && !assassin.isCorpse()) {
+                unit = assassin;
+                debugColor = colorForAssassinState(assassin);
+                target = assassin.getTargetPosition();
+            }
+            
+            if (unit == null) {
+                continue;
+            }
+            
+            boolean visible = xRayEnabled || ((int) unit.getZ() <= currentLayer && unit.getZ() >= 0);
+            if (!visible) {
+                continue;
+            }
+            if (!began) {
+                sr.setProjectionMatrix(topDownCamera.combined);
+                sr.begin(ShapeRenderer.ShapeType.Line);
+                began = true;
+            }
+            sr.setColor(debugColor);
+            float originX = (unit.getX() + 0.5f) * blockSize;
+            float originY = (unit.getY() + 0.5f) * blockSize;
+            if (target != null) {
+                float targetX = (target.x + 0.5f) * blockSize;
+                float targetY = (target.y + 0.5f) * blockSize;
+                sr.line(originX, originY, targetX, targetY);
+                sr.circle(targetX, targetY, blockSize * 0.2f);
+            } else {
+                sr.circle(originX, originY, blockSize * 0.12f);
+            }
+        }
+        if (began) {
+            sr.end();
+        }
+        renderTopDownAiDebugLabels();
+    }
+
+    private void renderTopDownAiDebugLabels() {
+        if (!aiDebugOverlayEnabled) {
+            return;
+        }
+        boolean began = false;
+        overlayProjection.setToOrtho2D(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        overlayBatch.setProjectionMatrix(overlayProjection);
+        overlayFont.getData().setScale(0.8f);
+        for (Entity entity : worldContext.getEntities()) {
+            Unit unit = null;
+            String label = null;
+            
+            if (entity instanceof Guard guard && !guard.isCorpse()) {
+                unit = guard;
+                label = formatGuardLabel(guard);
+            } else if (entity instanceof Assassin assassin && !assassin.isCorpse()) {
+                unit = assassin;
+                label = formatAssassinLabel(assassin);
+            }
+            
+            if (unit == null) {
+                continue;
+            }
+            
+            boolean visible = xRayEnabled || ((int) unit.getZ() <= currentLayer && unit.getZ() >= 0);
+            if (!visible) {
+                continue;
+            }
+            aiDebugProjectVec.set((unit.getX() + 0.5f) * blockSize, (unit.getY() + 0.5f) * blockSize, 0f);
+            topDownViewport.project(aiDebugProjectVec);
+            if (!began) {
+                overlayBatch.begin();
+                began = true;
+            }
+            overlayFont.setColor(Color.WHITE);
+            overlayFont.draw(overlayBatch, label, aiDebugProjectVec.x + 6f, aiDebugProjectVec.y + 18f);
+        }
+        if (began) {
+            overlayBatch.end();
+            overlayFont.setColor(Color.WHITE);
+        }
+        overlayFont.getData().setScale(1f);
+    }
+
+    private String formatGuardLabel(Guard guard) {
+        Vector3 target = guard.getTargetPosition();
+        if (target != null) {
+            return String.format(Locale.US, "%s | %s -> %.0f,%.0f,%.0f",
+                guard.getType(),
+                guard.getCurrentStateName(),
+                target.x, target.y, target.z);
+        }
+        return String.format(Locale.US, "%s | %s%s",
+            guard.getType(),
+            guard.getCurrentStateName(),
+            guard.hasInvestigationTarget() ? " (investigate)" : "");
+    }
+
+    private String formatAssassinLabel(Assassin assassin) {
+        Vector3 target = assassin.getTargetPosition();
+        if (target != null) {
+            return String.format(Locale.US, "ASSASSIN | %s -> %.0f,%.0f,%.0f",
+                assassin.getCurrentStateName(),
+                target.x, target.y, target.z);
+        }
+        return String.format(Locale.US, "ASSASSIN | %s%s",
+            assassin.getCurrentStateName(),
+            assassin.shouldFlee() ? " (fleeing)" : "");
+    }
+
+    private Color colorForAssassinState(Assassin assassin) {
+        if (assassin.shouldFlee()) {
+            return DEBUG_FLEE_COLOR;
+        }
+        if (assassin.hasStrikeOpportunity()) {
+            return DEBUG_ENGAGE_COLOR;
+        }
+        return new Color(0.6f, 0.2f, 0.8f, 1f); // Purple for sneak
+    }
+
     private void renderSideAwarenessIcons() {
         boolean began = false;
         overlayFont.getData().setScale(1f);
@@ -1864,6 +2023,56 @@ public class DualViewScreen implements Screen {
         }
     }
 
+    private void renderSideAiDebug() {
+        if (!aiDebugOverlayEnabled) {
+            return;
+        }
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        boolean began = false;
+        for (Entity entity : worldContext.getEntities()) {
+            Unit unit = null;
+            Color debugColor = null;
+            Vector3 target = null;
+            
+            if (entity instanceof Guard guard && !guard.isCorpse()) {
+                unit = guard;
+                debugColor = colorForGuardState(guard);
+                target = guard.getTargetPosition();
+            } else if (entity instanceof Assassin assassin && !assassin.isCorpse()) {
+                unit = assassin;
+                debugColor = colorForAssassinState(assassin);
+                target = assassin.getTargetPosition();
+            }
+            
+            if (unit == null) {
+                continue;
+            }
+            
+            if (!xRayEnabled && Math.round(unit.getY()) != sideViewSlice) {
+                continue;
+            }
+            if (!began) {
+                sr.setProjectionMatrix(sideCamera.combined);
+                sr.begin(ShapeRenderer.ShapeType.Line);
+                began = true;
+            }
+            sr.setColor(debugColor);
+            float originX = (unit.getX() + 0.5f) * blockSize;
+            float originZ = (unit.getZ() + undergroundDepth) * blockSize;
+            if (target != null) {
+                float targetX = (target.x + 0.5f) * blockSize;
+                float targetZ = (target.z + undergroundDepth) * blockSize;
+                sr.line(originX, originZ, targetX, targetZ);
+                sr.circle(targetX, targetZ, blockSize * 0.2f, 18);
+            } else {
+                sr.circle(originX, originZ, blockSize * 0.1f, 12);
+            }
+        }
+        if (began) {
+            sr.end();
+        }
+    }
+
     private void renderIsometricAwarenessIcons() {
         boolean began = false;
         overlayFont.getData().setScale(1f);
@@ -1887,6 +2096,120 @@ public class DualViewScreen implements Screen {
         if (began) {
             overlayBatch.end();
             overlayFont.setColor(Color.WHITE);
+        }
+    }
+
+    private void renderAiDebugLogPanel(float scale) {
+        AiDebugLog log = worldContext.getDebugLog();
+        if (log == null) {
+            return;
+        }
+        List<AiDebugLog.Entry> entries = log.snapshot();
+        int lines = Math.min(MAX_DEBUG_LOG_LINES, entries.size());
+        if (lines == 0) {
+            return;
+        }
+        float screenWidth = Gdx.graphics.getWidth();
+        float screenHeight = Gdx.graphics.getHeight();
+        float lineHeight = 20f * scale;
+        float panelWidth = Math.max(320f * scale, screenWidth * 0.32f);
+        float panelHeight = lineHeight * lines + 32f * scale;
+        float panelX = screenWidth - panelWidth - 20f * scale;
+        float panelY = screenHeight - panelHeight - 20f * scale;
+
+        ShapeRenderer sr = gridRenderer.getShapeRenderer();
+        overlayProjection.setToOrtho2D(0, 0, screenWidth, screenHeight);
+        sr.setProjectionMatrix(overlayProjection);
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        sr.begin(ShapeRenderer.ShapeType.Filled);
+        drawBubble(sr, panelX, panelY, panelWidth, panelHeight, new Color(0.08f, 0.08f, 0.12f, 0.85f));
+        sr.end();
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+
+        overlayBatch.setProjectionMatrix(overlayProjection);
+        overlayBatch.begin();
+        overlayFont.getData().setScale(scale * 0.7f);
+        for (int i = 0; i < lines; i++) {
+            AiDebugLog.Entry entry = entries.get(entries.size() - 1 - i);
+            String line = formatLogEntry(entry);
+            float textY = panelY + panelHeight - 18f * scale - i * lineHeight;
+            overlayFont.draw(overlayBatch, line, panelX + 16f * scale, textY);
+        }
+        overlayBatch.end();
+        overlayFont.getData().setScale(1f);
+    }
+
+    private String formatLogEntry(AiDebugLog.Entry entry) {
+        long totalSeconds = entry.timestampMillis() / 1000L;
+        long minutes = (totalSeconds / 60L) % 60L;
+        long seconds = totalSeconds % 60L;
+        StringBuilder builder = new StringBuilder()
+            .append(String.format(Locale.US, "%02d:%02d ", minutes, seconds))
+            .append(entry.team())
+            .append(' ');
+        if (entry.guardType() != null) {
+            builder.append(entry.guardType()).append(' ');
+        } else {
+            builder.append("ASSASSIN ");
+        }
+        builder.append(entry.state())
+            .append(' ')
+            .append('[')
+            .append(entry.category())
+            .append("] ")
+            .append(entry.details());
+        Vector3 target = entry.target();
+        if (target != null) {
+            builder.append(String.format(Locale.US, " -> %.0f,%.0f,%.0f", target.x, target.y, target.z));
+        }
+        return builder.toString();
+    }
+
+    private Color colorForGuardState(Guard guard) {
+        GuardState state = guard.getCurrentState();
+        if (state == GuardState.ENGAGE) {
+            return DEBUG_ENGAGE_COLOR;
+        }
+        if (state == GuardState.ALERT) {
+            return DEBUG_ALERT_COLOR;
+        }
+        if (state == GuardState.FLEE) {
+            return DEBUG_FLEE_COLOR;
+        }
+        if (guard.getType() == Guard.GuardType.ENTOURAGE) {
+            return DEBUG_ENTOURAGE_COLOR;
+        }
+        return DEBUG_PATROL_COLOR;
+    }
+
+    private void appendDebugHotkeys(StringBuilder builder) {
+        builder.append(", F2 AI overlay, F3 AI log");
+    }
+
+    private void handleAiDebugToggle() {
+        if (Gdx.input.isKeyPressed(Input.Keys.F2)) {
+            if (!keyF2Pressed) {
+                aiDebugOverlayEnabled = !aiDebugOverlayEnabled;
+                Gdx.app.log("DualViewScreen", aiDebugOverlayEnabled ? "AI overlay enabled" : "AI overlay disabled");
+            }
+            keyF2Pressed = true;
+        } else {
+            keyF2Pressed = false;
+        }
+
+        if (Gdx.input.isKeyPressed(Input.Keys.F3)) {
+            if (!keyF3Pressed) {
+                aiDebugLoggingEnabled = !aiDebugLoggingEnabled;
+                AiDebugLog log = worldContext.getDebugLog();
+                if (log != null) {
+                    log.setEnabled(aiDebugLoggingEnabled);
+                }
+                Gdx.app.log("DualViewScreen", aiDebugLoggingEnabled ? "AI debug logging enabled" : "AI debug logging disabled");
+            }
+            keyF3Pressed = true;
+        } else {
+            keyF3Pressed = false;
         }
     }
 

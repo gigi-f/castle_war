@@ -1,20 +1,30 @@
 package com.castlewar.ai.assassin;
 
-import com.badlogic.gdx.ai.fsm.DefaultStateMachine;
-import com.castlewar.ai.AiAgent;
 import com.castlewar.ai.AiContext;
 import com.castlewar.entity.Assassin;
 
-public final class AssassinAgent extends AiAgent<Assassin> {
-    private final DefaultStateMachine<Assassin, AssassinState> stateMachine;
+public class AssassinAgent {
+    private final Assassin owner;
+    private final AiContext context;
 
     public AssassinAgent(Assassin owner, AiContext context) {
-        super(owner, context);
-        this.stateMachine = new DefaultStateMachine<>(owner, AssassinState.SNEAK);
-        setStateMachine(stateMachine);
+        this.owner = owner;
+        this.context = context;
     }
 
-    public void changeState(AssassinState nextState) {
-        stateMachine.changeState(nextState);
+    public void update(float delta) {
+        // no-op stub
+    }
+
+    public AiContext getContext() {
+        return context;
+    }
+
+    public com.castlewar.ai.assassin.AssassinState getCurrentState() {
+        return com.castlewar.ai.assassin.AssassinState.IDLE;
+    }
+
+    public void changeState(com.castlewar.ai.assassin.AssassinState s) {
+        // no-op
     }
 }

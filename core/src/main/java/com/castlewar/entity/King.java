@@ -14,7 +14,6 @@ public class King extends Unit {
     private static final String[] SUFFIXES = {"I", "II", "III", "IV", "V", "the Great", "the Wise", "the Bold"};
 
     private float moveTimer = 0f;
-    private Vector3 targetPosition = null;
     private final KingAgent aiAgent;
     private transient float aiDeltaSnapshot;
 
@@ -53,10 +52,7 @@ public class King extends Unit {
                  patrolTarget = new Vector3(rx, ry, rz);
             }
         }
-        
-        if (patrolTarget != null) {
-            pickSmartMove(world, patrolTarget);
-        }
+        // Movement disabled: do not plan or set target positions.
     }
 
     @Override
@@ -78,49 +74,20 @@ public class King extends Unit {
         if (guard == null) {
             return;
         }
-        pickSmartMove(world, guard.getPosition());
+        // Movement disabled: no-op
     }
 
     public void fleeFromThreat(Unit threat, GridWorld world) {
         if (threat == null) {
             return;
         }
-        Vector3 retreat = tmp.set(position).sub(threat.getPosition());
-        retreat.z = 0f;
-        if (retreat.isZero(0.0001f)) {
-            retreat.set(MathUtils.random(-2f, 2f), MathUtils.random(-2f, 2f), 0f);
-        }
-        retreat.nor().scl(8f).add(position);
-        pickSmartMove(world, retreat);
+        // Movement disabled: no-op
     }
 
     public void applyMovement(float delta, GridWorld world) {
-        if (isStunned()) {
-            velocity.x = 0f;
-            velocity.y = 0f;
-            return;
-        }
-
-        if (targetPosition != null) {
-            Vector3 direction = tmp.set(targetPosition).sub(position);
-            direction.z = 0f;
-            direction.nor();
-
-            float speed = 2f;
-            velocity.x = direction.x * speed;
-            velocity.y = direction.y * speed;
-
-            float dst2 = Vector3.dst2(position.x, position.y, 0, targetPosition.x, targetPosition.y, 0);
-            if (dst2 < 0.1f * 0.1f) {
-                velocity.x = 0f;
-                velocity.y = 0f;
-                targetPosition = null;
-                moveTimer = MathUtils.random(1f, 3f);
-            }
-        } else {
-            velocity.x = 0f;
-            velocity.y = 0f;
-        }
+        // Movement disabled: Ensure King does not move.
+        velocity.x = 0f;
+        velocity.y = 0f;
     }
 
     public Guard findClosestGuard(java.util.List<Entity> entities) {

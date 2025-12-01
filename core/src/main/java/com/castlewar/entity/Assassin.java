@@ -24,6 +24,7 @@ public class Assassin extends Unit {
     private final Vector3 threatDirection = new Vector3();
     private final List<Entity> visibleThreats = new ArrayList<>();
     private final Vector3 preferredDirection = new Vector3();
+    private boolean isSpacing = false;
     private Unit nearestAssassinThreat;
     private float nearestAssassinDistance = Float.MAX_VALUE;
     private final AssassinAgent aiAgent;
@@ -53,6 +54,11 @@ public class Assassin extends Unit {
         this.aiDeltaSnapshot = delta;
         aiAgent.update(delta);
 
+        // Movement disabled: clear any movement plan and stop horizontal motion.
+        targetPosition = null;
+        velocity.x = 0f;
+        velocity.y = 0f;
+
         super.applyPhysics(delta, world);
         resolvePostPhysicsAttacks();
     }
@@ -62,70 +68,24 @@ public class Assassin extends Unit {
         return 5.0f;
     }
 
-    public void performSneakBehavior(float delta, GridWorld world) {
-        if (targetPosition == null && moveTimer <= 0f) {
-            decideNextMove(world);
-        }
-        resolveMovement(delta, world);
-    }
-
-    public void performStrikeBehavior(float delta, GridWorld world) {
-        if (targetEnemy != null && !targetEnemy.isDead()) {
-            if (targetPosition == null) {
-                pickSmartMove(world, targetEnemy.getPosition());
-            }
-        } else if (targetKing != null && targetKing instanceof Unit && !((Unit) targetKing).isDead()) {
-            if (targetPosition == null) {
-                pickSmartMove(world, targetKing.getPosition());
-            }
-        }
-        resolveMovement(delta, world);
-    }
-
-    public void performEscapeBehavior(float delta, GridWorld world) {
-        if (targetPosition == null || moveTimer <= 0f) {
-            pickShadowRetreat(world);
-        }
-        resolveMovement(delta, world);
-    }
-
-    private void resolveMovement(float delta, GridWorld world) {
-        if (isStunned()) {
-            velocity.x = 0f;
-            velocity.y = 0f;
+    private void resolvePostPhysicsAttacks() {
+        AiContext ctx = aiAgent.getContext();
+        
+        // Prioritize backstab opportunities - but not while fleeing!
+        if (!isFleeing && targetEnemy != null && canBackstab(targetEnemy, ctx.getEntities())) {
+            executeBackstab(targetEnemy);
             return;
         }
-
-        if (targetPosition != null) {
-            Vector3 direction = tmp.set(targetPosition).sub(position).nor();
-            velocity.x = direction.x * BASE_SPEED;
-            velocity.y = direction.y * BASE_SPEED;
-
-            if (targetPosition.z > position.z + 0.1f) {
-                velocity.z = direction.z * BASE_SPEED;
-                velocity.z += gravity * delta;
-            }
-
-            float dst2 = position.dst2(targetPosition);
-            if (dst2 < 0.2f * 0.2f) {
-                if (currentPath != null && !currentPath.isEmpty()) {
-                    targetPosition = currentPath.remove(0);
-                } else {
-                    velocity.set(0f, 0f, 0f);
-                    targetPosition = null;
-                    moveTimer = 0f;
-                }
-            }
-        } else {
-            velocity.set(0f, 0f, 0f);
-            moveTimer -= delta;
-            if (moveTimer <= 0f) {
-                decideNextMove(world);
+        
+        if (targetKing instanceof Unit) {
+            Unit kingUnit = (Unit) targetKing;
+            if (!isFleeing && !kingUnit.isDead() && canBackstab(kingUnit, ctx.getEntities())) {
+                executeBackstab(kingUnit);
+                return;
             }
         }
-    }
-
-    private void resolvePostPhysicsAttacks() {
+        
+        // Normal attacks
         if (targetKing instanceof Unit && !((Unit) targetKing).isDead()) {
             if (position.dst(targetKing.getPosition()) < attackRange) {
                 attack((Unit) targetKing);
@@ -223,6 +183,25 @@ public class Assassin extends Unit {
         }
 
         isFleeing = stealthTimer > 0f;
+        
+        // Update spacing state with hysteresis
+        boolean wasSpacing = isSpacing;
+        if (nearestAssassinThreat != null) {
+            if (nearestAssassinDistance < MIN_ASSASSIN_DISTANCE) {
+                isSpacing = true;
+            } else if (nearestAssassinDistance > MIN_ASSASSIN_DISTANCE + 4f) {
+                isSpacing = false;
+            }
+        } else {
+            isSpacing = false;
+        }
+
+        // Interrupt current move if we need to start spacing
+        if (isSpacing && !wasSpacing) {
+            targetPosition = null;
+            moveTimer = 0f;
+            logAssassinEvent("SPACING", "INTERRUPTED_MOVE", null);
+        }
     }
 
     private Vector3 infiltrationTarget;
@@ -231,148 +210,25 @@ public class Assassin extends Unit {
         this.infiltrationTarget = target;
     }
 
-    private void decideNextMove(GridWorld world) {
-        if (shouldMaintainAssassinSpacing() && planAssassinSpacingMove(world)) {
+    public com.castlewar.ai.assassin.AssassinState getCurrentState() {
+        return aiAgent.getCurrentState();
+    }
+
+    public String getCurrentStateName() {
+        com.castlewar.ai.assassin.AssassinState current = getCurrentState();
+        return current != null ? current.name() : "UNKNOWN";
+    }
+
+    private void logAssassinEvent(String category, String detail, Vector3 destination) {
+        AiContext ctx = aiAgent.getContext();
+        if (ctx == null) {
             return;
         }
-
-        if (isFleeing) {
-            pickShadowRetreat(world);
+        WorldContext worldContext = ctx.getWorldContext();
+        if (worldContext == null || worldContext.getDebugLog() == null) {
             return;
         }
-
-        Vector3 target = null;
-
-        if (infiltrationTarget != null) {
-            if (position.dst(infiltrationTarget) < 5.0f) {
-                infiltrationTarget = null;
-            } else {
-                target = infiltrationTarget;
-            }
-        }
-
-        if (target == null && targetKing != null) {
-            target = targetKing.getPosition();
-        }
-
-        if (target != null) {
-            pickSmartMove(world, target);
-            if (targetPosition != null && isPositionExposed(world, targetPosition)) {
-                pickShadowRetreat(world);
-            }
-        } else {
-            pickRandomMove(world);
-        }
-    }
-
-    private void pickRandomMove(GridWorld world) {
-        int currentX = Math.round(position.x);
-        int currentY = Math.round(position.y);
-        int currentZ = Math.round(position.z);
-
-        // Try a few times to find a valid random move
-        for (int i = 0; i < 5; i++) {
-            int dx = MathUtils.random(-1, 1);
-            int dy = MathUtils.random(-1, 1);
-            int dz = MathUtils.random(-1, 1);
-            
-            // Don't move diagonally in 3D
-            if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) != 1) continue;
-            
-            int nx = currentX + dx;
-            int ny = currentY + dy;
-            int nz = currentZ + dz;
-            
-            Vector3 move = null;
-            if (dz != 0) { // Vertical move
-                 if (isValidMove(world, nx, ny, nz)) move = new Vector3(nx, ny, nz);
-            } else { // Horizontal move
-                 move = getValidMoveTarget(world, nx, ny, nz);
-            }
-            
-            if (move != null) {
-                targetPosition = move;
-                return;
-            }
-        }
-        // If no valid random move found after several tries, stay put for now
-        targetPosition = null;
-    }
-
-    private void pickShadowRetreat(GridWorld world) {
-        int currentX = Math.round(position.x);
-        int currentY = Math.round(position.y);
-        int currentZ = Math.round(position.z);
-
-        Vector3 bestMove = null;
-        float bestScore = Float.NEGATIVE_INFINITY;
-        Vector3 preferredDir = new Vector3(getGoalDirection());
-
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                if (Math.abs(dx) + Math.abs(dy) != 1) continue;
-                int nx = currentX + dx;
-                int ny = currentY + dy;
-                Vector3 candidate = getValidMoveTarget(world, nx, ny, currentZ);
-                if (candidate == null) continue;
-                float score = evaluateStealthMove(world, candidate, preferredDir);
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMove = candidate;
-                }
-            }
-        }
-
-        if (bestMove == null) {
-            for (int dz = -1; dz <= 1; dz += 2) {
-                int nz = currentZ + dz;
-                if (!isValidMove(world, currentX, currentY, nz)) continue;
-                Vector3 candidate = new Vector3(currentX, currentY, nz);
-                float score = evaluateStealthMove(world, candidate, preferredDir);
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMove = candidate;
-                }
-            }
-        }
-
-        if (bestMove != null) {
-            targetPosition = bestMove;
-        } else {
-            pickRandomMove(world);
-        }
-    }
-
-    private float evaluateStealthMove(GridWorld world, Vector3 candidate, Vector3 preferredDir) {
-        float exposure = calculateExposure(world, candidate);
-        float distanceScore = 0f;
-        for (Entity threat : visibleThreats) {
-            float before = position.dst2(threat.getPosition());
-            float after = candidate.dst2(threat.getPosition());
-            distanceScore += (after - before);
-        }
-
-        float directionScore = 0f;
-        Vector3 dir = new Vector3(candidate).sub(position);
-        dir.z = 0f;
-        if (!dir.isZero(0.0001f)) {
-            dir.nor();
-            if (preferredDir != null && !preferredDir.isZero(0.0001f)) {
-                directionScore = dir.dot(preferredDir);
-            } else if (!threatDirection.isZero(0.0001f)) {
-                directionScore = dir.dot(threatDirection);
-            }
-        }
-
-        float spacingPenalty = 0f;
-        if (nearestAssassinThreat != null) {
-            float distAfter = candidate.dst(nearestAssassinThreat.getPosition());
-            if (distAfter < MIN_ASSASSIN_DISTANCE) {
-                spacingPenalty = (MIN_ASSASSIN_DISTANCE - distAfter) * 3f;
-            }
-        }
-
-        return distanceScore * 0.05f + directionScore * 3.0f - exposure * 6f - spacingPenalty;
+        worldContext.getDebugLog().logAssassinEvent(this, category, detail, position, destination);
     }
 
     private boolean isPositionExposed(GridWorld world, Vector3 probe) {
@@ -414,7 +270,7 @@ public class Assassin extends Unit {
     }
 
     private boolean shouldMaintainAssassinSpacing() {
-        return nearestAssassinThreat != null && nearestAssassinDistance < MIN_ASSASSIN_DISTANCE;
+        return isSpacing && nearestAssassinThreat != null;
     }
 
     private boolean planAssassinSpacingMove(GridWorld world) {
@@ -422,72 +278,75 @@ public class Assassin extends Unit {
             return false;
         }
         Vector3 threatPos = nearestAssassinThreat.getPosition();
-        float dist = position.dst(threatPos);
-        if (dist >= MIN_ASSASSIN_DISTANCE) {
-            return false;
-        }
+        
+        // Note: We rely on isSpacing state, so we don't check dist >= MIN_ASSASSIN_DISTANCE here anymore
+        // This allows us to continue spacing until we reach the hysteresis upper bound
 
+        // Immediate flee: pick a rapid escape direction away from the threat
         Vector3 radial = new Vector3(position).sub(threatPos);
         radial.z = 0f;
         if (radial.isZero(0.0001f)) {
-            radial.set(1f, 0f, 0f);
+            radial.set(MathUtils.randomSign(), MathUtils.randomSign(), 0f);
         }
         radial.nor();
 
-        Vector3 tangentA = new Vector3(-radial.y, radial.x, 0f).nor();
-        Vector3 tangentB = new Vector3(radial.y, -radial.x, 0f).nor();
-        Vector3 goalDir = new Vector3(getGoalDirection());
-        Vector3 preferred = tangentA;
-        if (!goalDir.isZero(0.0001f)) {
-            float dotA = tangentA.dot(goalDir);
-            float dotB = tangentB.dot(goalDir);
-            preferred = dotB > dotA ? tangentB : tangentA;
-        } else if (MathUtils.randomBoolean()) {
-            preferred = tangentB;
-        }
+        // Add random tangential component for unpredictability
+        float tangentStrength = MathUtils.random(0.3f, 0.6f);
+        Vector3 tangent = new Vector3(-radial.y, radial.x, 0f).scl(MathUtils.randomSign() * tangentStrength);
+        Vector3 fleeDir = new Vector3(radial).add(tangent).nor();
 
-        Vector3 desired = new Vector3(threatPos)
-            .add(new Vector3(radial).scl(MIN_ASSASSIN_DISTANCE + 1f))
-            .add(new Vector3(preferred).scl(4f));
+        // Try immediate adjacent tiles in flee direction
+        int currentX = Math.round(position.x);
+        int currentY = Math.round(position.y);
+        int currentZ = Math.round(position.z);
 
-        Vector3 safe = findClosestValid(world, desired);
-        if (safe != null) {
-            targetPosition = safe;
-            return true;
-        }
-        return false;
-    }
+        Vector3 bestMove = null;
+        float bestDist = 0f;
 
-    private Vector3 findClosestValid(GridWorld world, Vector3 desired) {
-        int baseZ = Math.round(desired.z);
-        int baseX = Math.round(desired.x);
-        int baseY = Math.round(desired.y);
-        Vector3 best = null;
-        float bestDist2 = Float.MAX_VALUE;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (Math.abs(dx) + Math.abs(dy) != 1) continue;
+                Vector3 dir = new Vector3(dx, dy, 0f).nor();
+                float alignment = dir.dot(fleeDir);
+                if (alignment < 0.2f) continue; // Relaxed alignment check
 
-        for (int radius = 0; radius <= 3; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dy = -radius; dy <= radius; dy++) {
-                    if (Math.abs(dx) != radius && Math.abs(dy) != radius) {
-                        continue;
-                    }
-                    int x = baseX + dx;
-                    int y = baseY + dy;
-                    Vector3 move = getValidMoveTarget(world, x, y, baseZ);
-                    if (move == null) continue;
-                    float d2 = move.dst2(desired);
-                    if (d2 < bestDist2) {
-                        bestDist2 = d2;
-                        best = move;
+                Vector3 candidate = getValidMoveTarget(world, currentX + dx, currentY + dy, currentZ);
+                if (candidate != null) {
+                    float distFromThreat = candidate.dst(threatPos);
+                    // Prioritize distance, use alignment as tie-breaker
+                    float score = distFromThreat + (alignment * 2.0f);
+                    if (score > bestDist) {
+                        bestDist = score;
+                        bestMove = candidate;
                     }
                 }
             }
-            if (best != null) {
-                break;
+        }
+
+        if (bestMove != null) {
+            targetPosition = bestMove;
+            moveTimer = 0.2f; // Quick re-evaluation
+            logAssassinEvent("SPACING", "URGENT_FLEE", targetPosition);
+            return true;
+        }
+
+        // Fallback: try vertical escape
+        if (canClimb) {
+            for (int dz = 1; dz <= 2; dz++) {
+                if (isValidMove(world, currentX, currentY, currentZ + dz)) {
+                    targetPosition = new Vector3(currentX, currentY, currentZ + dz);
+                    moveTimer = 0.2f;
+                    logAssassinEvent("SPACING", "VERTICAL_FLEE", targetPosition);
+                    return true;
+                }
             }
         }
-        return best;
+
+        logAssassinEvent("SPACING", "FLEE_BLOCKED", null);
+        return false;
     }
+
+
 
     private Vector3 getGoalDirection() {
         preferredDirection.setZero();
@@ -513,5 +372,203 @@ public class Assassin extends Unit {
         return preferredDirection;
     }
 
+    
+
+    private boolean attemptCastleInfiltration(GridWorld world, Vector3 target) {
+        int currentX = Math.round(position.x);
+        int currentY = Math.round(position.y);
+        int currentZ = Math.round(position.z);
+
+        // First: try to find a door or gate
+        Vector3 doorEntry = scanForDoorEntry(world, currentX, currentY, currentZ, 8);
+        if (doorEntry != null) {
+            targetPosition = doorEntry;
+            logAssassinEvent("INFILTRATE", "DOOR_APPROACH", targetPosition);
+            return true;
+        }
+
+        // Second: scan perimeter for climbable wall
+        Vector3 climbPoint = scanPerimeterForClimb(world, target);
+        if (climbPoint != null) {
+            targetPosition = climbPoint;
+            logAssassinEvent("INFILTRATE", "CLIMB_POINT", targetPosition);
+            return true;
+        }
+
+        logAssassinEvent("INFILTRATE", "NO_ENTRY_FOUND", null);
+        return false;
+    }
+
+    private Vector3 scanForDoorEntry(GridWorld world, int cx, int cy, int cz, int radius) {
+        for (int r = 1; r <= radius; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dy = -r; dy <= r; dy++) {
+                    if (Math.abs(dx) != r && Math.abs(dy) != r) continue;
+                    int x = cx + dx;
+                    int y = cy + dy;
+                    
+                    GridWorld.BlockState block = world.getBlock(x, y, cz);
+                    if (block == GridWorld.BlockState.DOOR) {
+                        // Check if door is accessible
+                        Vector3 approach = getValidMoveTarget(world, x, y, cz);
+                        if (approach != null) {
+                            return approach;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Vector3 scanPerimeterForClimb(GridWorld world, Vector3 target) {
+        if (!canClimb) return null;
+
+        int currentX = Math.round(position.x);
+        int currentY = Math.round(position.y);
+        int currentZ = Math.round(position.z);
+        
+        // Find nearest castle wall
+        Vector3 bestClimbPoint = null;
+        float bestScore = Float.NEGATIVE_INFINITY;
+        
+        for (int radius = 1; radius <= 6; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dy = -radius; dy <= radius; dy++) {
+                    if (Math.abs(dx) != radius && Math.abs(dy) != radius) continue;
+                    
+                    int x = currentX + dx;
+                    int y = currentY + dy;
+                    
+                    // Check if this is an exterior castle wall
+                    GridWorld.BlockState block = world.getBlock(x, y, currentZ);
+                    if (!isCastleBlock(block)) continue;
+                    
+                    // Check if we can climb here
+                    if (!isAdjacentToWall(world, x, y, currentZ)) continue;
+                    
+                    // Try to find valid climb path
+                    for (int dz = 1; dz <= 4; dz++) {
+                        if (isValidMove(world, x, y, currentZ + dz)) {
+                            Vector3 climbTop = new Vector3(x, y, currentZ + dz);
+                            float distToTarget = climbTop.dst(target);
+                            float score = -distToTarget + dz * 2f; // Prefer higher climbs closer to target
+                            
+                            if (score > bestScore) {
+                                bestScore = score;
+                                // Set climb point at base of wall
+                                bestClimbPoint = getValidMoveTarget(world, x, y, currentZ);
+                                if (bestClimbPoint == null) {
+                                    bestClimbPoint = new Vector3(x, y, currentZ);
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            if (bestClimbPoint != null) break;
+        }
+        
+        return bestClimbPoint;
+    }
+
+    private boolean isCastleBlock(GridWorld.BlockState block) {
+        return block == GridWorld.BlockState.CASTLE_WHITE ||
+               block == GridWorld.BlockState.CASTLE_BLACK ||
+               block == GridWorld.BlockState.CASTLE_WHITE_FLOOR ||
+               block == GridWorld.BlockState.CASTLE_BLACK_FLOOR ||
+               block == GridWorld.BlockState.CASTLE_WHITE_STAIR ||
+               block == GridWorld.BlockState.CASTLE_BLACK_STAIR;
+    }
+
+    public boolean canBackstab(Unit target, List<Entity> entities) {
+        if (target == null || target.isDead() || target.getTeam() == this.team) {
+            return false;
+        }
+        
+        // Must be close
+        float dist = position.dst(target.getPosition());
+        if (dist > attackRange * 1.5f) {
+            return false;
+        }
+        
+        // Target must be isolated (no allies within 8 units)
+        for (Entity e : entities) {
+            if (e == target || !(e instanceof Unit) || e == this) continue;
+            Unit other = (Unit) e;
+            if (other.getTeam() == target.getTeam() && !other.isDead()) {
+                if (target.getPosition().dst(other.getPosition()) < 8f) {
+                    return false; // Target has backup
+                }
+            }
+        }
+        
+        return true;
+    }
+
+    public void executeBackstab(Unit target) {
+        if (!canBackstab(target, aiAgent.getContext().getEntities())) {
+            return;
+        }
+        
+        // Instant kill
+        target.takeDamage(target.getHp() + 1f);
+        logAssassinEvent("COMBAT", "BACKSTAB_KILL", target.getPosition());
+        
+        // Trigger alert for nearby enemies
+        triggerAwarenessCue(AwarenessIcon.ALERT, false);
+    }
+
+    private boolean attemptDesperateEscape(GridWorld world) {
+        // 1. Try to climb higher (parkour!)
+        if (canClimb) {
+             for (int dz = 1; dz <= 3; dz++) {
+                 // Check immediate vertical
+                 if (isValidMove(world, Math.round(position.x), Math.round(position.y), Math.round(position.z) + dz)) {
+                     targetPosition = new Vector3(Math.round(position.x), Math.round(position.y), Math.round(position.z) + dz);
+                     moveTimer = 0.2f;
+                     logAssassinEvent("SPACING", "DESPERATE_CLIMB", targetPosition);
+                     return true;
+                 }
+             }
+        }
+
+        // 2. Wall Scramble: Try ANY valid adjacent move that isn't directly towards threat
+        Vector3 threatPos = nearestAssassinThreat != null ? nearestAssassinThreat.getPosition() : null;
+        int currentX = Math.round(position.x);
+        int currentY = Math.round(position.y);
+        int currentZ = Math.round(position.z);
+
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                
+                Vector3 candidate = getValidMoveTarget(world, currentX + dx, currentY + dy, currentZ);
+                if (candidate != null) {
+                    // If we have a threat, avoid moving directly into it
+                    if (threatPos != null && candidate.dst(threatPos) < position.dst(threatPos) - 0.5f) {
+                        continue; // Don't get closer
+                    }
+                    targetPosition = candidate;
+                    moveTimer = 0.15f;
+                    logAssassinEvent("SPACING", "DESPERATE_SCRAMBLE", targetPosition);
+                    return true;
+                }
+            }
+        }
+
+        // 3. Fight: If we can't run, turn and fight
+        if (threatPos != null && position.dst(threatPos) < 2.0f) {
+             // Force state change to STRIKE? 
+             // Or just stop fleeing so we can attack
+             isFleeing = false;
+             isSpacing = false; // Stop trying to space
+             logAssassinEvent("SPACING", "CORNERED_FIGHT", threatPos);
+             return true; // Handled by state change next frame
+        }
+
+        return false;
+    }
 }
 

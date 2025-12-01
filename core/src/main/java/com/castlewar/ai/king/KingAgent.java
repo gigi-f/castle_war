@@ -1,20 +1,30 @@
 package com.castlewar.ai.king;
 
-import com.badlogic.gdx.ai.fsm.DefaultStateMachine;
-import com.castlewar.ai.AiAgent;
 import com.castlewar.ai.AiContext;
 import com.castlewar.entity.King;
 
-public final class KingAgent extends AiAgent<King> {
-    private final DefaultStateMachine<King, KingState> stateMachine;
+public class KingAgent {
+    private final King owner;
+    private final AiContext context;
 
     public KingAgent(King owner, AiContext context) {
-        super(owner, context);
-        this.stateMachine = new DefaultStateMachine<>(owner, KingState.PATROL);
-        setStateMachine(stateMachine);
+        this.owner = owner;
+        this.context = context;
     }
 
-    public void changeState(KingState nextState) {
-        stateMachine.changeState(nextState);
+    public void update(float delta) {
+        // no-op stub
+    }
+
+    public AiContext getContext() {
+        return context;
+    }
+
+    public com.castlewar.ai.king.KingState getCurrentState() {
+        return com.castlewar.ai.king.KingState.IDLE;
+    }
+
+    public void changeState(com.castlewar.ai.king.KingState s) {
+        // no-op
     }
 }

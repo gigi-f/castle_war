@@ -34,32 +34,13 @@ public class Streaker extends Unit {
             if (position.dst(currentTarget) < 2.0f) {
                 goingRight = !goingRight;
                 currentTarget = goingRight ? rightTarget : leftTarget;
-                // Clear path to force recalculation
-                currentPath.clear();
+                // (movement disabled) previously cleared path here
             }
             
-            // Move
-            pickSmartMove(world, currentTarget);
-            
-            if (targetPosition != null) {
-                Vector3 direction = new Vector3(targetPosition).sub(position);
-                direction.nor();
-                velocity.x = direction.x * speed;
-                velocity.y = direction.y * speed;
-                
-                // Handle vertical movement (climbing/jumping)
-                if (targetPosition.z > position.z + 0.1f) {
-                    velocity.z = direction.z * speed;
-                }
-                
-                // Stop if very close to targetPosition (sub-step)
-                if (position.dst(targetPosition) < 0.1f) {
-                    targetPosition = null;
-                    velocity.set(0,0,0);
-                }
-            } else {
-                velocity.set(0,0,0);
-            }
+            // Movement disabled: Streaker remains stationary.
+            // Clear any planned target and ensure zero velocity.
+            targetPosition = null;
+            velocity.set(0f, 0f, 0f);
         }
         
         super.applyPhysics(delta, world);

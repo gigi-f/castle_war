@@ -174,7 +174,7 @@ public class UnitRenderer implements Disposable {
         pixmap.setColor(jewelColor);
         pixmap.fillCircle(32, 60, 4);
 
-        // Face panel
+        // Face panel (skin tone on top-front)
         pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
         pixmap.fillRectangle(20, 32, 24, 16);
     }
@@ -202,6 +202,10 @@ public class UnitRenderer implements Disposable {
         pixmap.fillRectangle(4, 52, 56, 12);
         pixmap.setColor(hatColor);
         pixmap.fillRectangle(26, 52, 12, 12);
+
+        // Face panel (skin tone on top-front)
+        pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
+        pixmap.fillRectangle(20, 32, 24, 16);
     }
 
     private void drawAssassinTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
@@ -223,6 +227,10 @@ public class UnitRenderer implements Disposable {
         pixmap.setColor(accentColor);
         pixmap.fillRectangle(10, 20, 8, 24);
         pixmap.fillRectangle(46, 20, 8, 24);
+
+        // Face panel (skin tone on top-front, showing through mask)
+        pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
+        pixmap.fillRectangle(20, 32, 24, 16);
     }
 
     private void drawGenericTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
@@ -306,6 +314,17 @@ public class UnitRenderer implements Disposable {
             instance.transform.rotate(workingRotation);
             instance.transform.setTranslation(unit.getX(), unit.getY(), unit.getZ() + (MODEL_WIDTH * 0.5f) - sink);
         } else {
+            // Rotate based on unit facing direction (add 180 degrees to flip face to front)
+            Vector3 facing = unit.getFacing();
+            // Start with 180-degree rotation around Z to put face on front
+            workingRotation.setEulerAngles(0, 0, 180);
+            instance.transform.rotate(workingRotation);
+            
+            if (!facing.isZero(0.001f)) {
+                // Then rotate to face the direction of movement
+                workingRotation.setFromCross(new Vector3(1, 0, 0), facing);
+                instance.transform.rotate(workingRotation);
+            }
             instance.transform.setTranslation(unit.getX(), unit.getY(), unit.getZ() + MODEL_HEIGHT / 2f);
         }
     }
