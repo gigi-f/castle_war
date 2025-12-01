@@ -105,12 +105,17 @@ public class DualViewScreen implements Screen {
     private static final float SIDE_VIEW_MIN_ZOOM = 0.5f;
     private static final float SIDE_VIEW_MAX_ZOOM = 3.0f;
     private static final float SIDE_VIEW_ZOOM_STEP = 0.15f;
+    private static final float ISO_VIEW_MIN_ZOOM = 0.1f;
+    private static final float ISO_VIEW_MAX_ZOOM = 30f;
+    private static final float ISO_VIEW_ZOOM_STEP = 0.5f;
+    private static final float ISO_VIEW_DEFAULT_ZOOM = 5f;
+    private static final float ISO_CAMERA_PAN_SPEED = 300f;
     private final float isoTileWidth;
     private final float isoTileHeight;
     private final float isoBlockHeight;
     private float isoOriginX;
     private float isoOriginY;
-    private float isoZoom = 5f;
+    private float isoZoom = ISO_VIEW_DEFAULT_ZOOM;
     private ViewMode viewMode;
     private boolean keySlashPressed;
     private int sideViewSlice;
@@ -125,7 +130,6 @@ public class DualViewScreen implements Screen {
     private final List<Entity> fpsRenderBuffer = new ArrayList<>();
     private final Vector3 fpsLabelPosition = new Vector3();
     private final Color awarenessColor = new Color();
-    private final Vector3 aiDebugProjectVec = new Vector3();
     private static final Color BODY_NEUTRAL = new Color(0.82f, 0.82f, 0.86f, 1f);
     private static final Color BODY_DARK = new Color(0.18f, 0.18f, 0.22f, 1f);
     private static final Color WHITE_HAT_COLOR = new Color(0.95f, 0.85f, 0.15f, 1f);
@@ -135,12 +139,6 @@ public class DualViewScreen implements Screen {
     private static final float AWARENESS_ICON_SCALE = 4f;
     private static final Color ALERT_ICON_COLOR = new Color(1f, 0.82f, 0.25f, 1f);
     private static final Color INVESTIGATE_ICON_COLOR = new Color(0.55f, 0.9f, 1f, 1f);
-    private static final Color DEBUG_PATROL_COLOR = new Color(0.35f, 0.85f, 0.45f, 1f);
-    private static final Color DEBUG_ALERT_COLOR = new Color(1f, 0.7f, 0.2f, 1f);
-    private static final Color DEBUG_ENGAGE_COLOR = new Color(1f, 0.25f, 0.3f, 1f);
-    private static final Color DEBUG_FLEE_COLOR = new Color(0.6f, 0.5f, 1f, 1f);
-    private static final Color DEBUG_ENTOURAGE_COLOR = new Color(0.95f, 0.9f, 0.3f, 1f);
-    private static final int MAX_DEBUG_LOG_LINES = 6;
     
     // Current Z-level being viewed
     private int currentLayer;
@@ -321,9 +319,6 @@ public class DualViewScreen implements Screen {
     } else if (viewMode == ViewMode.SIDE_SCROLLER) {
         renderSideScrollerFullView();
     }
-        
-        // Display view info overlay/logging
-        renderOverlay();
         
         // Display view info overlay/logging
         renderOverlay();
@@ -519,7 +514,7 @@ public class DualViewScreen implements Screen {
         boolean updated = false;
         if (Gdx.input.isKeyPressed(Input.Keys.MINUS)) {
             if (!keyMinusPressed) {
-                isoZoom = Math.min(30f, isoZoom + 0.5f); // Zoom out
+                isoZoom = Math.min(ISO_VIEW_MAX_ZOOM, isoZoom + ISO_VIEW_ZOOM_STEP); // Zoom out
                 updated = true;
             }
             keyMinusPressed = true;
@@ -528,7 +523,7 @@ public class DualViewScreen implements Screen {
         }
         if (Gdx.input.isKeyPressed(Input.Keys.EQUALS)) {
             if (!keyEqualsPressed) {
-                isoZoom = Math.max(0.1f, isoZoom - 0.5f); // Zoom in
+                isoZoom = Math.max(ISO_VIEW_MIN_ZOOM, isoZoom - ISO_VIEW_ZOOM_STEP); // Zoom in
                 updated = true;
             }
             keyEqualsPressed = true;
@@ -545,7 +540,7 @@ public class DualViewScreen implements Screen {
         if (viewMode != ViewMode.ISOMETRIC) {
             return;
         }
-        float panSpeed = 300f * delta;
+        float panSpeed = ISO_CAMERA_PAN_SPEED * delta;
         float moveX = 0f;
         float moveY = 0f;
         if (Gdx.input.isKeyPressed(Input.Keys.A)) {
@@ -831,12 +826,13 @@ public class DualViewScreen implements Screen {
                 Color color = getBlockColor(blockToRender);
                 if (depthOffset > 0) {
                     float fade = 1f - Math.min(depthOffset * 0.12f, 0.6f);
-                    color = new Color(
+                    tempColor.set(
                         color.r * fade,
                         color.g * fade,
                         color.b * fade,
                         1f
                     );
+                    color = tempColor;
                 }
                 sr.setColor(color);
                 float screenX = x * blockSize;
@@ -959,12 +955,13 @@ public class DualViewScreen implements Screen {
                     // Apply desaturation to lower layers
                     if (opacity < 1.0f) {
                         float gray = (color.r + color.g + color.b) / 3f;
-                        color = new Color(
+                        tempColor.set(
                             color.r * opacity + gray * (1 - opacity),
                             color.g * opacity + gray * (1 - opacity),
                             color.b * opacity + gray * (1 - opacity),
                             opacity * 0.7f
                         );
+                        color = tempColor;
                     }
                     sr.setColor(color);
                     float screenX = x * blockSize;
@@ -1017,7 +1014,17 @@ public class DualViewScreen implements Screen {
         }
     }
 
-    private float[] projectIsoPoint(float x, float y, float z, float centerX, float centerY) {
+    /**
+     * Projects isometric point and fills the provided buffer array [x, y].
+     * This method avoids allocating new arrays on every call.
+     * @param x World x coordinate
+     * @param y World y coordinate
+     * @param z World z coordinate
+     * @param centerX Center x for rotation
+     * @param centerY Center y for rotation
+     * @param buffer Output buffer (must have length >= 2)
+     */
+    private void projectIsoPointInPlace(float x, float y, float z, float centerX, float centerY, float[] buffer) {
         // 1. Translate to center
         float relX = x - centerX;
         float relY = y - centerY;
@@ -1029,21 +1036,22 @@ public class DualViewScreen implements Screen {
         float rotX = relX * cos - relY * sin;
         float rotY = relX * sin + relY * cos;
         
-        // 3. Translate back (optional, but we want to rotate around center)
-        // Actually for iso projection we usually want 0,0 to be the anchor.
-        // Let's keep it relative to center for the projection.
-        
-        // 4. Isometric projection
-        // Standard iso: x = (x - y), y = (x + y) / 2
-        // But we need to scale by tile size.
-        // isoX = (rotX - rotY) * (isoTileWidth / 2f)
-        // isoY = (rotX + rotY) * (isoTileHeight / 2f)
-        // Note: Our original code had isoX = -(y-x) which is (x-y).
-        
+        // 3. Isometric projection
         float isoX = (rotX - rotY) * (isoTileWidth / 2f);
         float isoY = (rotX + rotY) * (isoTileHeight / 2f) + (z * isoBlockHeight);
         
-        return new float[] { isoOriginX + isoX, isoOriginY + isoY };
+        buffer[0] = isoOriginX + isoX;
+        buffer[1] = isoOriginY + isoY;
+    }
+
+    /**
+     * @deprecated Use projectIsoPointInPlace with a reusable buffer to avoid allocations.
+     */
+    @Deprecated
+    private float[] projectIsoPoint(float x, float y, float z, float centerX, float centerY) {
+        float[] result = new float[2];
+        projectIsoPointInPlace(x, y, z, centerX, centerY, result);
+        return result;
     }
 
 
@@ -1161,7 +1169,7 @@ public class DualViewScreen implements Screen {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         sr.begin(ShapeRenderer.ShapeType.Filled);
-        drawBubble(sr, bubbleX, bubbleY, bubbleWidth, bubbleHeight, new Color(0.1f, 0.1f, 0.15f, 0.85f));
+        drawBubble(sr, bubbleX, bubbleY, bubbleWidth, bubbleHeight, OVERLAY_BUBBLE_COLOR);
         sr.end();
         Gdx.gl.glDisable(GL20.GL_BLEND);
         
@@ -1197,7 +1205,7 @@ public class DualViewScreen implements Screen {
         sr.begin(ShapeRenderer.ShapeType.Filled);
         
         // Background Bubble
-        drawBubble(sr, modalX, modalY, modalWidth, modalHeight, new Color(0.1f, 0.1f, 0.15f, 0.9f));
+        drawBubble(sr, modalX, modalY, modalWidth, modalHeight, MODAL_BUBBLE_COLOR);
         
         // Headshot Background
         float headshotSize = 80f * scale;
@@ -1220,7 +1228,7 @@ public class DualViewScreen implements Screen {
             sr.rect(headshotX + headshotSize*0.2f, headshotY + headshotSize*0.2f, headshotSize*0.6f, headshotSize*0.3f);
             
             // Crown
-            sr.setColor(isWhite ? Color.GOLD : new Color(0.4f, 0.4f, 0.4f, 1f));
+            sr.setColor(isWhite ? Color.GOLD : KING_DARK_CROWN_COLOR);
             sr.rect(headshotX + headshotSize*0.2f, headshotY + headshotSize*0.7f, headshotSize*0.6f, headshotSize*0.2f);
             // Crown spikes
             sr.triangle(
@@ -1246,7 +1254,7 @@ public class DualViewScreen implements Screen {
             boolean isWhite = assassin.getTeam() == Team.WHITE;
             
             // Hood (Dark Team Color)
-            sr.setColor(isWhite ? new Color(0.8f, 0.8f, 0.9f, 1f) : new Color(0.2f, 0.1f, 0.1f, 1f));
+            sr.setColor(isWhite ? ASSASSIN_WHITE_HOOD_COLOR : ASSASSIN_BLACK_HOOD_COLOR);
             // Hood shape
             sr.triangle(
                 headshotX + headshotSize*0.5f, headshotY + headshotSize*0.9f,
@@ -1762,8 +1770,7 @@ public class DualViewScreen implements Screen {
 
     private void renderFirstPerson() {
         // Set fog color to match GridRenderer N64-style fog
-        Color fogColor = new Color(0.85f, 0.87f, 0.9f, 1f);
-        Gdx.gl.glClearColor(fogColor.r, fogColor.g, fogColor.b, 1f);
+        Gdx.gl.glClearColor(FOG_COLOR.r, FOG_COLOR.g, FOG_COLOR.b, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
         
