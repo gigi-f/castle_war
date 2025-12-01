@@ -139,6 +139,31 @@ public class DualViewScreen implements Screen {
     private static final float AWARENESS_ICON_SCALE = 4f;
     private static final Color ALERT_ICON_COLOR = new Color(1f, 0.82f, 0.25f, 1f);
     private static final Color INVESTIGATE_ICON_COLOR = new Color(0.55f, 0.9f, 1f, 1f);
+    // Reusable temp color to avoid allocations during render
+    private final Color tempColor = new Color();
+
+    // AI debug projection helper
+    private final Vector3 aiDebugProjectVec = new Vector3();
+
+    // Overlay bubble colors
+    private static final Color OVERLAY_BUBBLE_COLOR = new Color(0.06f, 0.06f, 0.08f, 0.9f);
+    private static final Color MODAL_BUBBLE_COLOR = new Color(0.12f, 0.12f, 0.16f, 0.95f);
+
+    // Small visual colors used by HUD/entity headshots
+    private static final Color KING_DARK_CROWN_COLOR = new Color(0.22f, 0.16f, 0.06f, 1f);
+    private static final Color ASSASSIN_WHITE_HOOD_COLOR = new Color(0.95f, 0.95f, 0.95f, 1f);
+    private static final Color ASSASSIN_BLACK_HOOD_COLOR = new Color(0.06f, 0.06f, 0.06f, 1f);
+
+    // Fog color for first-person view
+    private static final Color FOG_COLOR = new Color(0.58f, 0.66f, 0.78f, 1f);
+
+    // Debug overlay colors and limits
+    private static final Color DEBUG_ENGAGE_COLOR = new Color(1f, 0.2f, 0.2f, 1f);
+    private static final Color DEBUG_ALERT_COLOR = new Color(1f, 0.6f, 0.1f, 1f);
+    private static final Color DEBUG_FLEE_COLOR = new Color(0.2f, 0.6f, 1f, 1f);
+    private static final Color DEBUG_ENTOURAGE_COLOR = new Color(0.4f, 0.8f, 0.4f, 1f);
+    private static final Color DEBUG_PATROL_COLOR = new Color(0.6f, 0.6f, 0.2f, 1f);
+    private static final int MAX_DEBUG_LOG_LINES = 14;
     
     // Current Z-level being viewed
     private int currentLayer;
