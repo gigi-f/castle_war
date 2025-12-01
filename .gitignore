@@ -29,3 +29,21 @@ Thumbs.db
 local.properties
 
 # Keep IDE/editor workspace files out, but allow committing the shared tasks.json
+
+# Compiled Java classes and archives
+*.class
+*.jar
+*.war
+*.ear
+
+# Common bin / generated output directories (avoid committing built binaries)
+/bin/
+/core/bin/
+/desktop/bin/
+
+# Gradle wrapper jar is intentionally kept above; ignore other build outputs
+generated/
+**/generated/
+
+# Avoid accidental commits of packaged distributions
+/dist/
