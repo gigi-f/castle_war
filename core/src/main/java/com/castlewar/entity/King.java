@@ -3,7 +3,7 @@ package com.castlewar.entity;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.castlewar.ai.AiContext;
-import com.castlewar.ai.king.KingAgent;
+import com.castlewar.ai.king.KingBTAgent;
 import com.castlewar.ai.king.KingState;
 import com.castlewar.simulation.WorldContext;
 import com.castlewar.world.GridWorld;
@@ -14,12 +14,12 @@ public class King extends Unit {
     private static final String[] SUFFIXES = {"I", "II", "III", "IV", "V", "the Great", "the Wise", "the Bold"};
 
     private float moveTimer = 0f;
-    private final KingAgent aiAgent;
+    private final KingBTAgent aiAgent;
     private transient float aiDeltaSnapshot;
 
     public King(float x, float y, float z, Team team, WorldContext worldContext) {
         super(x, y, z, team, generateName(), 50f, 20f);
-        this.aiAgent = new KingAgent(this, new AiContext(worldContext));
+        this.aiAgent = new KingBTAgent(this, new AiContext(worldContext));
     }
 
     private static String generateName() {
@@ -35,7 +35,7 @@ public class King extends Unit {
             return;
         }
         this.aiDeltaSnapshot = delta;
-        aiAgent.update(delta);
+        aiAgent.update(delta, aiAgent.getContext());
         super.applyPhysics(delta, world);
     }
 
@@ -74,20 +74,18 @@ public class King extends Unit {
         if (guard == null) {
             return;
         }
-        // Movement disabled: no-op
+        // BT handles this now
     }
 
     public void fleeFromThreat(Unit threat, GridWorld world) {
         if (threat == null) {
             return;
         }
-        // Movement disabled: no-op
+        // BT handles this now
     }
 
     public void applyMovement(float delta, GridWorld world) {
-        // Movement disabled: Ensure King does not move.
-        velocity.x = 0f;
-        velocity.y = 0f;
+        // BT now controls movement - this is a legacy method
     }
 
     public Guard findClosestGuard(java.util.List<Entity> entities) {
@@ -105,7 +103,7 @@ public class King extends Unit {
         return closest;
     }
 
-    public KingAgent getAiAgent() {
+    public KingBTAgent getAiAgent() {
         return aiAgent;
     }
 

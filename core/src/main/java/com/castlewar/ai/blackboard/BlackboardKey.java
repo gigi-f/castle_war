@@ -184,6 +184,62 @@ public enum BlackboardKey {
     SELF_FACING,
     
     // ═══════════════════════════════════════════════════════════════════════════
+    // GOAL - High-level objectives
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /** Primary target entity (e.g., King for assassins). Type: {@code Entity} */
+    GOAL_PRIMARY_TARGET,
+    
+    /** Secondary target entity. Type: {@code Entity} */
+    GOAL_SECONDARY_TARGET,
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // THREAT - Danger assessment
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /** List of enemies currently in detection range. Type: {@code List<Entity>} */
+    THREAT_ENEMIES_IN_RANGE,
+    
+    /** Nearest enemy entity. Type: {@code Entity} */
+    THREAT_NEAREST_ENEMY,
+    
+    /** Whether currently under attack. Type: {@code Boolean} */
+    THREAT_UNDER_ATTACK,
+    
+    /** Time of last damage received. Type: {@code Float} */
+    THREAT_LAST_DAMAGE_TIME,
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SOCIAL - Ally and squad coordination
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /** List of nearby allied entities. Type: {@code List<Entity>} */
+    SOCIAL_NEARBY_ALLIES,
+    
+    /** Current squad leader or protector. Type: {@code Entity} */
+    SOCIAL_SQUAD_LEADER,
+    
+    /** Ally to follow or protect. Type: {@code Entity} */
+    SOCIAL_FOLLOW_TARGET,
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MOVEMENT (additional)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /** Target position for general movement. Type: {@code Vector3} */
+    MOVEMENT_TARGET_POSITION,
+    
+    /** Home/spawn position. Type: {@code Vector3} */
+    MOVEMENT_HOME_POSITION,
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // COMBAT (additional)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /** Attack range for this unit. Type: {@code Float} */
+    COMBAT_ATTACK_RANGE,
+    
+    // ═══════════════════════════════════════════════════════════════════════════
     // CUSTOM - For unit-specific or temporary data
     // ═══════════════════════════════════════════════════════════════════════════
     
@@ -194,5 +250,23 @@ public enum BlackboardKey {
     CUSTOM_2,
     
     /** Generic custom data slot 3. Type: varies */
-    CUSTOM_3
+    CUSTOM_3,
+    
+    /** Generic custom boolean slot 1. Type: {@code Boolean} */
+    CUSTOM_BOOL_1,
+    
+    /** Generic custom boolean slot 2. Type: {@code Boolean} */
+    CUSTOM_BOOL_2,
+    
+    /** Generic custom float slot 1. Type: {@code Float} */
+    CUSTOM_FLOAT_1,
+    
+    /** Generic custom float slot 2. Type: {@code Float} */
+    CUSTOM_FLOAT_2,
+    
+    /** Generic custom entity slot 1. Type: {@code Entity} */
+    CUSTOM_ENTITY_1,
+    
+    /** Generic custom entity slot 2. Type: {@code Entity} */
+    CUSTOM_ENTITY_2
 }

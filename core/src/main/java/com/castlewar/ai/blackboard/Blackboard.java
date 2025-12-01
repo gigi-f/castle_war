@@ -266,6 +266,26 @@ public class Blackboard {
         }
     }
     
+    /**
+     * Sets a List value.
+     * 
+     * @param key   The blackboard key
+     * @param value The list value
+     * @param <T>   The list element type
+     */
+    public <T> void setList(BlackboardKey key, List<T> value) {
+        set(key, value);
+    }
+    
+    /**
+     * Clears a specific key from the blackboard.
+     * 
+     * @param key The blackboard key to clear
+     */
+    public void clear(BlackboardKey key) {
+        remove(key);
+    }
+    
     // ═══════════════════════════════════════════════════════════════════════════
     // OBSERVERS
     // ═══════════════════════════════════════════════════════════════════════════

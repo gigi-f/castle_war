@@ -3,7 +3,7 @@ package com.castlewar.entity;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.castlewar.ai.AiContext;
-import com.castlewar.ai.guard.GuardAgent;
+import com.castlewar.ai.guard.GuardBTAgent;
 import com.castlewar.ai.guard.GuardState;
 import com.castlewar.simulation.WorldContext;
 import com.castlewar.simulation.WorldContext.CastleBounds;
@@ -21,7 +21,7 @@ public class Guard extends Unit {
     private static final float MIN_PATROL_SPACING = 8f;
 
     private final GuardType type;
-    private final GuardAgent aiAgent;
+    private final GuardBTAgent aiAgent;
     private Entity targetToFollow; // For Entourage
     private final Vector3 lastKnownEnemyPosition = new Vector3();
     private boolean hasLastKnownEnemy;
@@ -33,7 +33,7 @@ public class Guard extends Unit {
     public Guard(float x, float y, float z, Team team, GuardType type, WorldContext worldContext) {
         super(x, y, z, team, generateName(type), 80f, 50f);
         this.type = type;
-        this.aiAgent = new GuardAgent(this, new AiContext(worldContext));
+        this.aiAgent = new GuardBTAgent(this, new AiContext(worldContext));
     }
 
     private static String generateName(GuardType type) {
@@ -57,11 +57,7 @@ public class Guard extends Unit {
         }
 
         this.aiDeltaSnapshot = delta;
-        aiAgent.update(delta);
-        // Movement disabled: ensure guard remains stationary regardless of AI instructions.
-        targetPosition = null;
-        velocity.x = 0f;
-        velocity.y = 0f;
+        aiAgent.update(delta, aiAgent.getContext());
 
         super.applyPhysics(delta, world);
     }
@@ -136,7 +132,7 @@ public class Guard extends Unit {
         clearTargetPosition("STOP_COMMAND");
     }
 
-    public GuardAgent getAiAgent() {
+    public GuardBTAgent getAiAgent() {
         return aiAgent;
     }
 

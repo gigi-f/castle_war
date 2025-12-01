@@ -3,7 +3,7 @@ package com.castlewar.entity;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.castlewar.ai.AiContext;
-import com.castlewar.ai.assassin.AssassinAgent;
+import com.castlewar.ai.assassin.AssassinBTAgent;
 import com.castlewar.ai.assassin.AssassinState;
 import com.castlewar.simulation.WorldContext;
 import com.castlewar.world.GridWorld;
@@ -27,13 +27,13 @@ public class Assassin extends Unit {
     private boolean isSpacing = false;
     private Unit nearestAssassinThreat;
     private float nearestAssassinDistance = Float.MAX_VALUE;
-    private final AssassinAgent aiAgent;
+    private final AssassinBTAgent aiAgent;
     private transient float aiDeltaSnapshot;
 
     public Assassin(float x, float y, float z, Team team, WorldContext worldContext) {
         super(x, y, z, team, generateName(), 30f, 40f);
         this.canClimb = true;
-        this.aiAgent = new AssassinAgent(this, new AiContext(worldContext));
+        this.aiAgent = new AssassinBTAgent(this, new AiContext(worldContext));
     }
 
     private static String generateName() {
@@ -52,12 +52,7 @@ public class Assassin extends Unit {
         }
 
         this.aiDeltaSnapshot = delta;
-        aiAgent.update(delta);
-
-        // Movement disabled: clear any movement plan and stop horizontal motion.
-        targetPosition = null;
-        velocity.x = 0f;
-        velocity.y = 0f;
+        aiAgent.update(delta, aiAgent.getContext());
 
         super.applyPhysics(delta, world);
         resolvePostPhysicsAttacks();
@@ -110,7 +105,7 @@ public class Assassin extends Unit {
         return isFleeing || hp < maxHp * 0.4f;
     }
 
-    public AssassinAgent getAiAgent() {
+    public AssassinBTAgent getAiAgent() {
         return aiAgent;
     }
 
