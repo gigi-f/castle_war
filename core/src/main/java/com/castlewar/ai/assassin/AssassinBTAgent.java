@@ -13,6 +13,7 @@ import com.castlewar.ai.behavior.leaf.tasks.*;
 import com.castlewar.ai.blackboard.Blackboard;
 import com.castlewar.ai.blackboard.BlackboardKey;
 import com.castlewar.entity.*;
+import com.castlewar.simulation.TeamObjective;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -113,6 +114,14 @@ public class AssassinBTAgent extends TransitionableAgent<Assassin, AssassinState
         
         // Store delta time
         blackboard.setFloat(BlackboardKey.CUSTOM_1, delta);
+        
+        // Auto-acquire target king from TeamObjective if not explicitly set
+        if (targetKing == null || (targetKing instanceof Unit && ((Unit) targetKing).isDead())) {
+            King enemyKing = TeamObjective.getInstance().getEnemyKing(owner.getTeam());
+            if (enemyKing != null && !enemyKing.isDead()) {
+                targetKing = enemyKing;
+            }
+        }
         
         // Update target king
         if (targetKing != null) {

@@ -83,7 +83,15 @@ public class GuardBTAgent extends TransitionableAgent<Guard, GuardState> {
                     .task(createPursueTargetTask())
                 .end()
                 
-                // Priority 4: Patrol (default behavior)
+                // Priority 4: March toward enemy king (collective objective)
+                .sequence("regicide-behavior")
+                    .node(ShouldTargetKing.enemyKingExists())
+                    .task(TargetEnemyKingTask.create())
+                    .task(createSetStateTask(GuardState.ALERT))
+                    .task(createAdvanceToKingTask())
+                .end()
+                
+                // Priority 5: Patrol (fallback if no king)
                 .sequence("patrol-behavior")
                     .task(createSetStateTask(GuardState.PATROL))
                     .task(new PatrolTask("guard-patrol", 2f, 2f))
@@ -328,6 +336,41 @@ public class GuardBTAgent extends TransitionableAgent<Guard, GuardState> {
             owner.getVelocity().y = direction.y * pursueSpeed;
             owner.getFacing().set(direction);
             owner.setTargetPosition(targetPos);
+            
+            return NodeState.RUNNING;
+        });
+    }
+    
+    /**
+     * Creates task for advancing toward the enemy king.
+     */
+    private TaskNode createAdvanceToKingTask() {
+        final float advanceSpeed = 4.5f;
+        
+        return new TaskNode("advanceToKing", bb -> {
+            Vector3 kingPos = bb.getVector3(BlackboardKey.MOVEMENT_TARGET_POSITION);
+            if (kingPos == null) {
+                return NodeState.FAILURE;
+            }
+            
+            Vector3 myPos = owner.getPosition();
+            float distance = myPos.dst(kingPos);
+            
+            // Close enough - let engage behavior handle combat
+            if (distance <= owner.getAttackRange()) {
+                owner.getVelocity().x = 0;
+                owner.getVelocity().y = 0;
+                return NodeState.SUCCESS;
+            }
+            
+            // Advance toward king
+            Vector3 direction = new Vector3(kingPos).sub(myPos);
+            direction.z = 0;
+            direction.nor();
+            
+            owner.getVelocity().x = direction.x * advanceSpeed;
+            owner.getVelocity().y = direction.y * advanceSpeed;
+            owner.getFacing().set(direction);
             
             return NodeState.RUNNING;
         });

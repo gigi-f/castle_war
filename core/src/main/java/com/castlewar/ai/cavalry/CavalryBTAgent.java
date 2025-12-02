@@ -14,7 +14,9 @@ import com.castlewar.ai.blackboard.Blackboard;
 import com.castlewar.ai.blackboard.BlackboardKey;
 import com.castlewar.entity.Cavalry;
 import com.castlewar.entity.Entity;
+import com.castlewar.entity.King;
 import com.castlewar.entity.Unit;
+import com.castlewar.simulation.TeamObjective;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -123,7 +125,16 @@ public class CavalryBTAgent extends TransitionableAgent<Cavalry, CavalryState> {
                     .task(createApproachForChargeTask())
                 .end()
                 
-                // Priority 7: Default patrol
+                // Priority 7: ALWAYS ride toward enemy king (collective objective)
+                .sequence("regicide-behavior")
+                    .node(createIsMounted())
+                    .node(ShouldTargetKing.enemyKingExists())
+                    .task(TargetEnemyKingTask.create())
+                    .task(createSetStateTask(CavalryState.CANTERING))
+                    .task(createRideToKingTask())
+                .end()
+                
+                // Priority 8: Default patrol (fallback if no king)
                 .sequence("patrol-behavior")
                     .task(createSetPatrolState())
                     .task(new PatrolTask("cavalry-patrol", 2f, 1.5f))
@@ -472,5 +483,40 @@ public class CavalryBTAgent extends TransitionableAgent<Cavalry, CavalryState> {
     @Override
     public AiContext getContext() {
         return context;
+    }
+    
+    /**
+     * Creates a task that rides toward the enemy king at canter speed.
+     * This implements the collective "kill the enemy king" objective.
+     */
+    private TaskNode createRideToKingTask() {
+        return new TaskNode("rideToKing") {
+            @Override
+            protected NodeState execute(Blackboard blackboard) {
+                Vector3 kingPos = blackboard.getVector3(BlackboardKey.MOVEMENT_TARGET_POSITION);
+                if (kingPos == null) {
+                    return NodeState.FAILURE;
+                }
+                
+                float distance = owner.getPosition().dst(kingPos);
+                
+                // Close enough - will be handled by charge/engage behavior next tick
+                if (distance <= IDEAL_CHARGE_DISTANCE && owner.canCharge()) {
+                    // Close enough for charge - let charge behavior take over
+                    King enemyKing = TeamObjective.getInstance().getEnemyKing(owner.getTeam());
+                    if (enemyKing != null && !enemyKing.isDead()) {
+                        blackboard.set(BlackboardKey.CUSTOM_ENTITY_1, enemyKing);
+                    }
+                    return NodeState.SUCCESS;
+                }
+                
+                // Ride toward king
+                Vector3 toKing = new Vector3(kingPos).sub(owner.getPosition()).nor();
+                owner.getVelocity().set(toKing).scl(owner.getCanterSpeed());
+                owner.getFacing().set(toKing.x, toKing.y, 0).nor();
+                
+                return NodeState.RUNNING;
+            }
+        };
     }
 }

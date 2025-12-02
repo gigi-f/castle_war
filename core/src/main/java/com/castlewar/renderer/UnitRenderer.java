@@ -106,6 +106,25 @@ public class UnitRenderer implements Disposable {
         buildModels();
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VEHICLE-SPECIFIC DIMENSIONS
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // Cavalry (horse + rider) - wider and longer than humanoid
+    private static final float CAVALRY_WIDTH = 1.6f;
+    private static final float CAVALRY_LENGTH = 2.8f;
+    private static final float CAVALRY_HEIGHT = 3.8f;
+    
+    // Trebuchet - large siege engine
+    private static final float TREBUCHET_WIDTH = 3.5f;
+    private static final float TREBUCHET_LENGTH = 4.5f;
+    private static final float TREBUCHET_HEIGHT = 5.0f;
+    
+    // Battering Ram - long and low
+    private static final float RAM_WIDTH = 2.5f;
+    private static final float RAM_LENGTH = 6.0f;
+    private static final float RAM_HEIGHT = 3.2f;
+
     private void buildModels() {
         ModelBuilder builder = new ModelBuilder();
         for (ModelKey key : ModelKey.values()) {
@@ -121,8 +140,9 @@ public class UnitRenderer implements Disposable {
                 TextureAttribute.createDiffuse(texture)
             );
             long attrs = VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal | VertexAttributes.Usage.TextureCoordinates;
-            // LibGDX's createBox takes (width, height, depth) == (X, Y, Z)
-            Model model = builder.createBox(MODEL_WIDTH, MODEL_LENGTH, MODEL_HEIGHT, material, attrs);
+            
+            // Create different model shapes based on unit type
+            Model model = createModelForType(builder, key.type, material, attrs);
             models.put(key, model);
         }
 
@@ -138,408 +158,130 @@ public class UnitRenderer implements Disposable {
         long glowAttrs = VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal;
         glowModel = builder.createSphere(MODEL_WIDTH * 2.4f, MODEL_LENGTH * 2.4f, MODEL_HEIGHT * 1.4f, 16, 16, glowMaterial, glowAttrs);
     }
+    
+    /**
+     * Creates a model with appropriate shape for the unit type.
+     * Vehicles get distinctive shapes; humanoids get standard box.
+     */
+    private Model createModelForType(ModelBuilder builder, UnitType type, Material material, long attrs) {
+        return switch (type) {
+            case CAVALRY -> builder.createBox(CAVALRY_WIDTH, CAVALRY_LENGTH, CAVALRY_HEIGHT, material, attrs);
+            case TREBUCHET -> builder.createBox(TREBUCHET_WIDTH, TREBUCHET_LENGTH, TREBUCHET_HEIGHT, material, attrs);
+            case BATTERING_RAM -> builder.createBox(RAM_WIDTH, RAM_LENGTH, RAM_HEIGHT, material, attrs);
+            default -> builder.createBox(MODEL_WIDTH, MODEL_LENGTH, MODEL_HEIGHT, material, attrs);
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HAT COLORS BY ROLE (same for both teams)
+    // ═══════════════════════════════════════════════════════════════════════════
+    private static final Color HAT_KING = new Color(1f, 0.84f, 0f, 1f);           // Gold
+    private static final Color HAT_GUARD = new Color(0.9f, 0.1f, 0.1f, 1f);       // Red
+    private static final Color HAT_ASSASSIN = new Color(0.5f, 0f, 0.5f, 1f);      // Purple
+    private static final Color HAT_INFANTRY = new Color(0.2f, 0.6f, 0.2f, 1f);    // Green
+    private static final Color HAT_ARCHER = new Color(0f, 0.6f, 0.8f, 1f);        // Cyan/Teal
+    private static final Color HAT_CAVALRY = new Color(1f, 0.5f, 0f, 1f);         // Orange
+    private static final Color HAT_TREBUCHET = new Color(0.4f, 0.26f, 0.13f, 1f); // Brown
+    private static final Color HAT_BATTERING_RAM = new Color(0.3f, 0.3f, 0.3f, 1f); // Dark Gray
+    private static final Color HAT_OTHER = new Color(0.5f, 0.5f, 0.5f, 1f);       // Gray
 
     private Pixmap generateTexture(UnitType type, Team team) {
         Pixmap pixmap = new Pixmap(64, 64, Pixmap.Format.RGBA8888);
-        Color robeColor = type == UnitType.ASSASSIN ? new Color(0.18f, 0.18f, 0.2f, 1f) : new Color(0.7f, 0.7f, 0.72f, 1f);
-        Color accentColor = team == Team.WHITE ? new Color(0.2f, 0.6f, 1f, 1f) : new Color(1f, 0.25f, 0.25f, 1f);
-        Color hatColor = team == Team.WHITE ? new Color(0.95f, 0.85f, 0.1f, 1f) : new Color(0.95f, 0.3f, 0.8f, 1f);
-
-        pixmap.setColor(robeColor);
+        
+        // Team color: WHITE team = white body, BLACK team = black body
+        Color bodyColor = team == Team.WHITE 
+            ? new Color(0.95f, 0.95f, 0.95f, 1f)  // Off-white
+            : new Color(0.1f, 0.1f, 0.1f, 1f);   // Near-black
+        
+        // Get hat color based on role
+        Color hatColor = getHatColorForType(type);
+        
+        // Fill body with team color
+        pixmap.setColor(bodyColor);
         pixmap.fill();
-
-        switch (type) {
-            case KING:
-                drawKingTexture(pixmap, accentColor, hatColor);
-                break;
-            case GUARD:
-                drawGuardTexture(pixmap, accentColor, hatColor);
-                break;
-            case ASSASSIN:
-                drawAssassinTexture(pixmap, accentColor, hatColor);
-                break;
-            case INFANTRY:
-                drawInfantryTexture(pixmap, accentColor, hatColor);
-                break;
-            case ARCHER:
-                drawArcherTexture(pixmap, accentColor, hatColor);
-                break;
-            case CAVALRY:
-                drawCavalryTexture(pixmap, accentColor, hatColor);
-                break;
-            case TREBUCHET:
-                drawTrebuchetTexture(pixmap, accentColor, hatColor);
-                break;
-            case BATTERING_RAM:
-                drawBatteringRamTexture(pixmap, accentColor, hatColor);
-                break;
-            default:
-                drawGenericTexture(pixmap, accentColor, hatColor);
-        }
+        
+        // Draw hat on top portion (top 1/4 of texture)
+        drawSimpleHat(pixmap, hatColor, type);
+        
         return pixmap;
     }
-
-    private void drawKingTexture(Pixmap pixmap, Color jewelColor, Color hatColor) {
-        // Robe trim
-        pixmap.setColor(new Color(0.4f, 0.1f, 0.05f, 1f));
-        pixmap.fillRectangle(0, 0, 64, 20);
-        pixmap.fillRectangle(0, 44, 64, 20);
-
-        // Belt
-        pixmap.setColor(new Color(0.25f, 0.2f, 0.15f, 1f));
-        pixmap.fillRectangle(0, 30, 64, 6);
-
-        // Crown base
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(0, 48, 64, 16);
-        pixmap.setColor(Color.GOLD);
-        pixmap.fillRectangle(0, 56, 64, 8);
-
-        // Crown spikes / jewels
-        pixmap.setColor(hatColor);
-        for (int i = 0; i < 4; i++) {
-            int start = 4 + i * 14;
-            pixmap.fillRectangle(start, 56, 6, 8);
-        }
-        pixmap.setColor(jewelColor);
-        pixmap.fillCircle(32, 60, 4);
-
-        // Face panel (skin tone on top-front)
-        pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
-        pixmap.fillRectangle(20, 32, 24, 16);
-    }
-
-    private void drawGuardTexture(Pixmap pixmap, Color plumeColor, Color hatColor) {
-        // Armor panels
-        pixmap.setColor(new Color(0.8f, 0.8f, 0.85f, 1f));
-        pixmap.fillRectangle(0, 12, 64, 40);
-
-        // Chest plate shading
-        pixmap.setColor(new Color(0.6f, 0.6f, 0.65f, 1f));
-        pixmap.fillRectangle(10, 18, 44, 28);
-
-        // Belt and straps
-        pixmap.setColor(new Color(0.2f, 0.2f, 0.25f, 1f));
-        pixmap.fillRectangle(0, 28, 64, 4);
-        pixmap.fillRectangle(28, 12, 8, 40);
-
-        // Helmet highlight
-        pixmap.setColor(new Color(0.9f, 0.9f, 0.95f, 1f));
-        pixmap.fillRectangle(0, 44, 64, 8);
-
-        // Plume (vibrant hat)
-        pixmap.setColor(plumeColor);
-        pixmap.fillRectangle(4, 52, 56, 12);
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(26, 52, 12, 12);
-
-        // Face panel (skin tone on top-front)
-        pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
-        pixmap.fillRectangle(20, 32, 24, 16);
-    }
-
-    private void drawAssassinTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
-        // Hood shadow
-        pixmap.setColor(new Color(0.08f, 0.08f, 0.1f, 1f));
-        pixmap.fillRectangle(0, 36, 64, 28);
-
-        // Hood trim as vibrant hat band
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(0, 52, 64, 8);
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(16, 48, 32, 6);
-
-        // Mask slit
-        pixmap.setColor(new Color(0.2f, 0, 0, 1f));
-        pixmap.fillRectangle(18, 44, 28, 4);
-
-        // Chest daggers
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(10, 20, 8, 24);
-        pixmap.fillRectangle(46, 20, 8, 24);
-
-        // Face panel (skin tone on top-front, showing through mask)
-        pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
-        pixmap.fillRectangle(20, 32, 24, 16);
-    }
-
-    private void drawGenericTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(0, 48, 64, 12);
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(20, 52, 24, 12);
+    
+    /**
+     * Returns the hat color for a given unit type.
+     * Hat colors are role-based and the same for both teams.
+     */
+    private Color getHatColorForType(UnitType type) {
+        return switch (type) {
+            case KING -> HAT_KING;
+            case GUARD -> HAT_GUARD;
+            case ASSASSIN -> HAT_ASSASSIN;
+            case INFANTRY -> HAT_INFANTRY;
+            case ARCHER -> HAT_ARCHER;
+            case CAVALRY -> HAT_CAVALRY;
+            case TREBUCHET -> HAT_TREBUCHET;
+            case BATTERING_RAM -> HAT_BATTERING_RAM;
+            default -> HAT_OTHER;
+        };
     }
     
-    private void drawInfantryTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
-        // Tunic/gambeson base (already filled with robe color)
+    /**
+     * Draws a simple hat/marker on the top portion of the texture.
+     * Different shapes for different unit types for visual variety.
+     */
+    private void drawSimpleHat(Pixmap pixmap, Color hatColor, UnitType type) {
+        pixmap.setColor(hatColor);
         
-        // Chainmail vest
-        pixmap.setColor(new Color(0.5f, 0.5f, 0.55f, 1f));
-        pixmap.fillRectangle(8, 16, 48, 28);
-        
-        // Chainmail pattern (dots)
-        pixmap.setColor(new Color(0.65f, 0.65f, 0.7f, 1f));
-        for (int row = 0; row < 5; row++) {
-            for (int col = 0; col < 8; col++) {
-                int x = 12 + col * 5 + (row % 2) * 2;
-                int y = 18 + row * 5;
-                pixmap.fillCircle(x, y, 1);
+        switch (type) {
+            case KING -> {
+                // Crown shape - tall with points
+                pixmap.fillRectangle(8, 48, 48, 16);  // Base
+                // Crown points
+                pixmap.fillRectangle(8, 56, 8, 8);
+                pixmap.fillRectangle(24, 56, 16, 8);
+                pixmap.fillRectangle(48, 56, 8, 8);
+            }
+            case GUARD -> {
+                // Helmet with plume
+                pixmap.fillRectangle(4, 48, 56, 12);
+                // Plume on top
+                pixmap.fillRectangle(24, 56, 16, 8);
+            }
+            case ASSASSIN -> {
+                // Hood shape - pointed
+                pixmap.fillRectangle(12, 48, 40, 10);
+                // Hood point
+                pixmap.fillRectangle(26, 54, 12, 10);
+            }
+            case INFANTRY -> {
+                // Simple helmet - rounded top
+                pixmap.fillRectangle(8, 48, 48, 14);
+                pixmap.fillRectangle(16, 58, 32, 6);
+            }
+            case ARCHER -> {
+                // Hood/cap with feather accent
+                pixmap.fillRectangle(8, 48, 48, 12);
+                // Feather
+                pixmap.fillRectangle(48, 52, 8, 12);
+            }
+            case CAVALRY -> {
+                // Cavalry helmet with crest
+                pixmap.fillRectangle(4, 46, 56, 14);
+                // Crest
+                pixmap.fillRectangle(26, 56, 12, 8);
+            }
+            case TREBUCHET, BATTERING_RAM -> {
+                // Banner/flag marker for vehicles
+                pixmap.fillRectangle(24, 48, 16, 16);
+                // Flag pole
+                pixmap.setColor(new Color(0.4f, 0.3f, 0.2f, 1f));
+                pixmap.fillRectangle(30, 40, 4, 24);
+                pixmap.setColor(hatColor);
+            }
+            default -> {
+                // Simple band
+                pixmap.fillRectangle(0, 52, 64, 12);
             }
         }
-        
-        // Belt
-        pixmap.setColor(new Color(0.3f, 0.2f, 0.1f, 1f));
-        pixmap.fillRectangle(0, 30, 64, 5);
-        
-        // Belt buckle
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(28, 30, 8, 5);
-        
-        // Simple helmet
-        pixmap.setColor(new Color(0.6f, 0.6f, 0.65f, 1f));
-        pixmap.fillRectangle(4, 48, 56, 16);
-        
-        // Helmet nose guard
-        pixmap.setColor(new Color(0.5f, 0.5f, 0.55f, 1f));
-        pixmap.fillRectangle(28, 44, 8, 16);
-        
-        // Helmet band with team color
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(0, 56, 64, 4);
-        
-        // Face panel (skin tone)
-        pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
-        pixmap.fillRectangle(20, 36, 24, 12);
-    }
-    
-    private void drawArcherTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
-        // Leather tunic base (greenish-brown for camouflage)
-        pixmap.setColor(new Color(0.35f, 0.42f, 0.28f, 1f));
-        pixmap.fillRectangle(0, 0, 64, 48);
-        
-        // Leather armor panels
-        pixmap.setColor(new Color(0.45f, 0.35f, 0.25f, 1f));
-        pixmap.fillRectangle(8, 14, 48, 24);
-        
-        // Leather stitching pattern
-        pixmap.setColor(new Color(0.3f, 0.22f, 0.15f, 1f));
-        for (int i = 0; i < 6; i++) {
-            int x = 12 + i * 7;
-            pixmap.drawLine(x, 16, x, 34);
-        }
-        
-        // Quiver strap (diagonal across chest)
-        pixmap.setColor(new Color(0.5f, 0.4f, 0.3f, 1f));
-        for (int i = 0; i < 8; i++) {
-            pixmap.fillRectangle(6 + i * 6, 18 + i * 2, 8, 4);
-        }
-        
-        // Belt
-        pixmap.setColor(new Color(0.35f, 0.28f, 0.18f, 1f));
-        pixmap.fillRectangle(0, 32, 64, 5);
-        
-        // Belt buckle
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(28, 32, 8, 5);
-        
-        // Hood (pulled back)
-        pixmap.setColor(new Color(0.3f, 0.35f, 0.25f, 1f));
-        pixmap.fillRectangle(0, 48, 64, 16);
-        
-        // Hood trim with team color
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(0, 56, 64, 8);
-        
-        // Feather accent on hood
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(48, 52, 4, 12);
-        pixmap.fillRectangle(52, 54, 3, 8);
-        
-        // Face panel (skin tone)
-        pixmap.setColor(new Color(0.93f, 0.84f, 0.7f, 1f));
-        pixmap.fillRectangle(20, 40, 24, 12);
-    }
-    
-    private void drawCavalryTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
-        // Horse body (lower section - brown/chestnut)
-        pixmap.setColor(new Color(0.55f, 0.35f, 0.2f, 1f));
-        pixmap.fillRectangle(0, 0, 64, 28);
-        
-        // Horse mane
-        pixmap.setColor(new Color(0.2f, 0.15f, 0.1f, 1f));
-        pixmap.fillRectangle(0, 20, 64, 8);
-        
-        // Saddle
-        pixmap.setColor(new Color(0.3f, 0.15f, 0.05f, 1f));
-        pixmap.fillRectangle(16, 22, 32, 12);
-        
-        // Saddle trim with team color
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(16, 22, 32, 3);
-        pixmap.fillRectangle(16, 31, 32, 3);
-        
-        // Rider armor
-        pixmap.setColor(new Color(0.6f, 0.6f, 0.65f, 1f));
-        pixmap.fillRectangle(8, 34, 48, 20);
-        
-        // Chest plate detail
-        pixmap.setColor(new Color(0.5f, 0.5f, 0.55f, 1f));
-        pixmap.fillRectangle(18, 36, 28, 16);
-        
-        // Helmet
-        pixmap.setColor(new Color(0.65f, 0.65f, 0.7f, 1f));
-        pixmap.fillRectangle(12, 54, 40, 10);
-        
-        // Helmet plume with team color
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(26, 56, 12, 8);
-        
-        // Visor slit
-        pixmap.setColor(new Color(0.1f, 0.1f, 0.1f, 1f));
-        pixmap.fillRectangle(20, 52, 24, 3);
-        
-        // Lance (diagonal across)
-        pixmap.setColor(new Color(0.5f, 0.35f, 0.2f, 1f));
-        for (int i = 0; i < 6; i++) {
-            pixmap.fillRectangle(4 + i * 8, 38 + i * 3, 6, 3);
-        }
-        
-        // Lance tip
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(52, 56, 8, 4);
-    }
-
-    private void drawTrebuchetTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
-        // Base platform (wooden)
-        pixmap.setColor(new Color(0.5f, 0.35f, 0.2f, 1f));
-        pixmap.fillRectangle(0, 0, 64, 18);
-        
-        // Platform planks detail
-        pixmap.setColor(new Color(0.4f, 0.28f, 0.15f, 1f));
-        for (int i = 0; i < 4; i++) {
-            pixmap.fillRectangle(0, 4 + i * 4, 64, 1);
-        }
-        
-        // Wheel (left)
-        pixmap.setColor(new Color(0.35f, 0.25f, 0.15f, 1f));
-        pixmap.fillRectangle(6, 2, 12, 12);
-        pixmap.setColor(new Color(0.2f, 0.15f, 0.1f, 1f));
-        pixmap.fillRectangle(10, 6, 4, 4);
-        
-        // Wheel (right)
-        pixmap.setColor(new Color(0.35f, 0.25f, 0.15f, 1f));
-        pixmap.fillRectangle(46, 2, 12, 12);
-        pixmap.setColor(new Color(0.2f, 0.15f, 0.1f, 1f));
-        pixmap.fillRectangle(50, 6, 4, 4);
-        
-        // Main beam frame (vertical supports)
-        pixmap.setColor(new Color(0.45f, 0.32f, 0.18f, 1f));
-        pixmap.fillRectangle(12, 14, 8, 40);
-        pixmap.fillRectangle(44, 14, 8, 40);
-        
-        // Crossbeam
-        pixmap.setColor(new Color(0.5f, 0.35f, 0.2f, 1f));
-        pixmap.fillRectangle(12, 48, 40, 6);
-        
-        // Pivot axle
-        pixmap.setColor(new Color(0.3f, 0.3f, 0.35f, 1f));
-        pixmap.fillRectangle(28, 30, 8, 8);
-        
-        // Throwing arm
-        pixmap.setColor(new Color(0.55f, 0.4f, 0.25f, 1f));
-        pixmap.fillRectangle(4, 32, 56, 6);
-        
-        // Counterweight (heavy)
-        pixmap.setColor(new Color(0.3f, 0.3f, 0.35f, 1f));
-        pixmap.fillRectangle(2, 22, 14, 12);
-        
-        // Sling (at end of arm)
-        pixmap.setColor(new Color(0.6f, 0.5f, 0.35f, 1f));
-        pixmap.fillRectangle(52, 28, 10, 8);
-        
-        // Team-colored banner
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(26, 52, 12, 10);
-        
-        // Banner pole
-        pixmap.setColor(new Color(0.4f, 0.3f, 0.2f, 1f));
-        pixmap.fillRectangle(30, 50, 4, 14);
-        
-        // Metal fittings (team accent)
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(10, 48, 4, 6);
-        pixmap.fillRectangle(50, 48, 4, 6);
-    }
-
-    private void drawBatteringRamTexture(Pixmap pixmap, Color accentColor, Color hatColor) {
-        // Base chassis (wooden)
-        pixmap.setColor(new Color(0.5f, 0.35f, 0.2f, 1f));
-        pixmap.fillRectangle(0, 0, 64, 20);
-        
-        // Chassis planks
-        pixmap.setColor(new Color(0.4f, 0.28f, 0.15f, 1f));
-        for (int i = 0; i < 5; i++) {
-            pixmap.fillRectangle(0, 4 + i * 4, 64, 1);
-        }
-        
-        // Wheels (4 wheels)
-        pixmap.setColor(new Color(0.35f, 0.25f, 0.15f, 1f));
-        pixmap.fillRectangle(4, 2, 10, 10);
-        pixmap.fillRectangle(18, 2, 10, 10);
-        pixmap.fillRectangle(36, 2, 10, 10);
-        pixmap.fillRectangle(50, 2, 10, 10);
-        
-        // Wheel hubs
-        pixmap.setColor(new Color(0.2f, 0.15f, 0.1f, 1f));
-        pixmap.fillRectangle(7, 5, 4, 4);
-        pixmap.fillRectangle(21, 5, 4, 4);
-        pixmap.fillRectangle(39, 5, 4, 4);
-        pixmap.fillRectangle(53, 5, 4, 4);
-        
-        // Protective roof (shed-like)
-        pixmap.setColor(new Color(0.4f, 0.3f, 0.2f, 1f));
-        pixmap.fillRectangle(4, 32, 56, 20);
-        
-        // Roof slats
-        pixmap.setColor(new Color(0.35f, 0.25f, 0.15f, 1f));
-        for (int i = 0; i < 4; i++) {
-            pixmap.fillRectangle(4, 34 + i * 5, 56, 2);
-        }
-        
-        // Support posts
-        pixmap.setColor(new Color(0.45f, 0.32f, 0.18f, 1f));
-        pixmap.fillRectangle(6, 18, 6, 16);
-        pixmap.fillRectangle(52, 18, 6, 16);
-        
-        // Ram beam (the battering ram itself - metal tipped)
-        pixmap.setColor(new Color(0.55f, 0.4f, 0.25f, 1f));
-        pixmap.fillRectangle(12, 24, 40, 8);
-        
-        // Ram head (iron)
-        pixmap.setColor(new Color(0.4f, 0.4f, 0.45f, 1f));
-        pixmap.fillRectangle(48, 22, 12, 12);
-        
-        // Ram head spikes
-        pixmap.setColor(new Color(0.3f, 0.3f, 0.35f, 1f));
-        pixmap.fillRectangle(58, 24, 4, 3);
-        pixmap.fillRectangle(58, 29, 4, 3);
-        
-        // Team banner on roof
-        pixmap.setColor(hatColor);
-        pixmap.fillRectangle(26, 52, 12, 10);
-        
-        // Banner pole
-        pixmap.setColor(new Color(0.4f, 0.3f, 0.2f, 1f));
-        pixmap.fillRectangle(30, 50, 4, 14);
-        
-        // Team-colored trim on roof
-        pixmap.setColor(accentColor);
-        pixmap.fillRectangle(4, 50, 56, 2);
-        
-        // Ropes/chains for swinging
-        pixmap.setColor(new Color(0.6f, 0.55f, 0.4f, 1f));
-        pixmap.fillRectangle(16, 32, 2, 8);
-        pixmap.fillRectangle(46, 32, 2, 8);
     }
 
     public void render(Camera camera, List<Entity> entities) {

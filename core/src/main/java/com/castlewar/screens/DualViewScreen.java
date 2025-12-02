@@ -319,12 +319,12 @@ public class DualViewScreen implements Screen {
             } else {
                 viewMode = ViewMode.FIRST_PERSON;
                 Gdx.input.setCursorCatched(true);
-                // Spawn player if needed
+                // Spawn player if needed (free agent - no team)
                 if (player == null) {
                     float startX = gridWorld.getWidth() / 2f;
                     float startY = gridWorld.getDepth() / 2f;
                     float startZ = gridWorld.getHeight() + 5; // Drop from sky
-                    player = new Player(startX, startY, startZ, Team.WHITE, fpsCamera);
+                    player = new Player(startX, startY, startZ, fpsCamera);
                     worldContext.getEntities().add(player);
                 }
             }
@@ -1815,9 +1815,12 @@ public class DualViewScreen implements Screen {
             renderFpsUnitLabels(fpsRenderBuffer);
             fpsRenderBuffer.clear();
         }
+        
+        // Player is a free agent observer
+        
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
     }
-
+    
     private void renderFpsUnitLabels(List<Entity> entities) {
         int screenWidth = Gdx.graphics.getWidth();
         int screenHeight = Gdx.graphics.getHeight();

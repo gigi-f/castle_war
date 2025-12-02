@@ -108,7 +108,16 @@ public class InfantryBTAgent extends TransitionableAgent<Infantry, InfantryState
                     .task(createPursueTask())
                 .end()
                 
-                // Priority 5: Regroup when isolated
+                // Priority 5: ALWAYS march toward enemy king (collective objective)
+                // This is the default aggressive behavior - no conditions needed
+                .sequence("regicide-behavior")
+                    .node(ShouldTargetKing.enemyKingExists())
+                    .task(TargetEnemyKingTask.create())
+                    .task(createSetStateTask(InfantryState.MARCH))
+                    .task(createMarchToKingTask())
+                .end()
+                
+                // Priority 6: Regroup when isolated (fallback if no king)
                 .sequence("regroup-behavior")
                     .node(createIsIsolated())
                     .node(createHasVisibleAllies())
@@ -116,7 +125,7 @@ public class InfantryBTAgent extends TransitionableAgent<Infantry, InfantryState
                     .task(createRegroupTask())
                 .end()
                 
-                // Priority 6: Default patrol/hold
+                // Priority 7: Default patrol/hold (only if no king exists)
                 .sequence("patrol-behavior")
                     .task(createSetStateTask(InfantryState.MARCH))
                     .task(new PatrolTask("infantry-patrol", 2f, 1.5f))
@@ -487,6 +496,48 @@ public class InfantryBTAgent extends TransitionableAgent<Infantry, InfantryState
             
             owner.getVelocity().x = direction.x * regroupSpeed;
             owner.getVelocity().y = direction.y * regroupSpeed;
+            owner.getFacing().set(direction);
+            
+            return NodeState.RUNNING;
+        });
+    }
+    
+    /**
+     * Creates a task that marches the unit toward the enemy king position.
+     * This implements the collective "kill the enemy king" objective.
+     */
+    private TaskNode createMarchToKingTask() {
+        final float marchSpeed = 4f;
+        
+        return new TaskNode("march-to-king", bb -> {
+            Vector3 kingPos = bb.getVector3(BlackboardKey.MOVEMENT_TARGET_POSITION);
+            if (kingPos == null) {
+                System.out.println("[MarchToKing] " + owner.getName() + " - NO KING POSITION in blackboard!");
+                return NodeState.FAILURE;
+            }
+            
+            float dist = owner.getPosition().dst(kingPos);
+            
+            // Debug occasionally
+            if (MathUtils.random() < 0.01f) {
+                System.out.println("[MarchToKing] " + owner.getName() + " marching to king at " + 
+                    kingPos + ", dist=" + dist + ", velocity will be: " + marchSpeed);
+            }
+            
+            // Close enough - will be handled by engage behavior next tick
+            if (dist <= owner.getAttackRange()) {
+                owner.getVelocity().x = 0;
+                owner.getVelocity().y = 0;
+                return NodeState.SUCCESS;
+            }
+            
+            // March toward king
+            Vector3 direction = new Vector3(kingPos).sub(owner.getPosition());
+            direction.z = 0;
+            direction.nor();
+            
+            owner.getVelocity().x = direction.x * marchSpeed;
+            owner.getVelocity().y = direction.y * marchSpeed;
             owner.getFacing().set(direction);
             
             return NodeState.RUNNING;

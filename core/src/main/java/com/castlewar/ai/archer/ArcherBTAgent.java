@@ -127,7 +127,15 @@ public class ArcherBTAgent extends TransitionableAgent<Archer, ArcherState> {
                     .task(createRetreatTask())
                 .end()
                 
-                // Priority 6: Default patrol
+                // Priority 6: Advance toward enemy king (collective objective)
+                .sequence("regicide-behavior")
+                    .node(ShouldTargetKing.enemyKingExists())
+                    .task(TargetEnemyKingTask.create())
+                    .task(createSetStateTask(ArcherState.REPOSITIONING))
+                    .task(createAdvanceToKingTask())
+                .end()
+                
+                // Priority 7: Default patrol (fallback if no king)
                 .sequence("patrol-behavior")
                     .task(createSetStateTask(ArcherState.IDLE))
                     .task(new PatrolTask("archer-patrol", 3f, 1.5f))
@@ -557,5 +565,43 @@ public class ArcherBTAgent extends TransitionableAgent<Archer, ArcherState> {
     @Override
     public AiContext getContext() {
         return context;
+    }
+    
+    /**
+     * Creates task for advancing toward the enemy king (staying at range).
+     */
+    private TaskNode createAdvanceToKingTask() {
+        final float advanceSpeed = 4f;
+        
+        return new TaskNode("advanceToKing") {
+            @Override
+            protected NodeState execute(Blackboard blackboard) {
+                Vector3 kingPos = blackboard.getVector3(BlackboardKey.MOVEMENT_TARGET_POSITION);
+                if (kingPos == null) {
+                    return NodeState.FAILURE;
+                }
+                
+                Vector3 myPos = owner.getPosition();
+                float distance = myPos.dst(kingPos);
+                
+                // Stay at ideal attack distance from king
+                if (distance <= IDEAL_ATTACK_DISTANCE) {
+                    owner.getVelocity().x = 0;
+                    owner.getVelocity().y = 0;
+                    return NodeState.SUCCESS;
+                }
+                
+                // Advance toward king
+                Vector3 direction = new Vector3(kingPos).sub(myPos);
+                direction.z = 0;
+                direction.nor();
+                
+                owner.getVelocity().x = direction.x * advanceSpeed;
+                owner.getVelocity().y = direction.y * advanceSpeed;
+                owner.getFacing().set(direction);
+                
+                return NodeState.RUNNING;
+            }
+        };
     }
 }

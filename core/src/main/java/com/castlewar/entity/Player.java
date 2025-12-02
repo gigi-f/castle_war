@@ -7,6 +7,10 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.castlewar.world.GridWorld;
 
+/**
+ * The player character - a free agent not affiliated with either team.
+ * Can observe and interact with the battle between WHITE and BLACK teams.
+ */
 public class Player extends Unit {
     private final PerspectiveCamera camera;
     // velocity and tmp are inherited from Entity/Unit
@@ -18,8 +22,8 @@ public class Player extends Unit {
     private float pitch = 0f;
     private float yaw = 0f;
 
-    public Player(float x, float y, float z, Team team, PerspectiveCamera camera) {
-        super(x, y, z, team, "Player", 100f, 100f);
+    public Player(float x, float y, float z, PerspectiveCamera camera) {
+        super(x, y, z, null, "Player", 100f, 100f); // null team = free agent
         this.camera = camera;
         this.canClimb = false; // Player jumps, doesn't auto-climb walls like Assassin
         this.speed = 8f; // Player is faster
@@ -100,5 +104,24 @@ public class Player extends Unit {
     @Override
     protected float getKnockbackStrengthAgainst(Unit target) {
         return 7.0f;
+    }
+    
+    /**
+     * Returns true since player is a free agent (no team affiliation).
+     */
+    public boolean isFreeAgent() {
+        return getTeam() == null;
+    }
+    
+    public Vector3 getCameraDirection() {
+        return camera.direction;
+    }
+    
+    public Vector3 getCameraRight() {
+        return camera.direction.cpy().crs(camera.up).nor();
+    }
+    
+    public Vector3 getCameraUp() {
+        return camera.up;
     }
 }
