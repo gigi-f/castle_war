@@ -3,11 +3,16 @@ package com.castlewar.simulation;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.castlewar.debug.AiDebugLog;
+import com.castlewar.entity.Archer;
 import com.castlewar.entity.Assassin;
+import com.castlewar.entity.Cavalry;
 import com.castlewar.entity.Entity;
 import com.castlewar.entity.Guard;
+import com.castlewar.entity.Infantry;
 import com.castlewar.entity.King;
 import com.castlewar.entity.Team;
+import com.castlewar.entity.Trebuchet;
+import com.castlewar.entity.BatteringRam;
 import com.castlewar.world.GridWorld;
 import java.util.ArrayList;
 import java.util.List;
@@ -959,9 +964,122 @@ public class WorldContext {
                 entities.add(guard);
             }
             
+            // Spawn Infantry squad in the courtyard
+            spawnInfantrySquad(startX, startY, layout, team);
+            
+            // Spawn Archers on the walls
+            spawnArcherSquad(startX, startY, layout, team);
+            
+            // Spawn Cavalry outside the castle
+            spawnCavalrySquad(startX, startY, layout, team);
+            
+            // Spawn Trebuchets behind the lines
+            spawnTrebuchets(startX, startY, layout, team);
+            
+            // Spawn Battering Rams for gate assault
+            spawnBatteringRams(startX, startY, layout, team);
+            
             // Add gates
             // ... (Gate logic if any)
             
+    }
+    
+    /**
+     * Spawns a squad of Infantry units in the castle courtyard.
+     */
+    private void spawnInfantrySquad(int startX, int startY, CastleLayout layout, Team team) {
+        int squadSize = 4;
+        int courtyardX = startX + layout.width / 2;
+        int courtyardY = startY + layout.height / 2;
+        float spawnZ = 1; // Ground floor
+        
+        // Spawn in a small formation
+        for (int i = 0; i < squadSize; i++) {
+            int row = i / 2;
+            int col = i % 2;
+            float offsetX = (col - 0.5f) * Infantry.FORMATION_SPACING;
+            float offsetY = row * Infantry.FORMATION_SPACING + 4; // Offset from king
+            
+            float px = courtyardX + offsetX;
+            float py = courtyardY + offsetY;
+            
+            Infantry infantry = new Infantry(px, py, spawnZ, team, this);
+            entities.add(infantry);
+        }
+    }
+    
+    /**
+     * Spawns a squad of Archer units on the castle walls.
+     * Archers prefer elevated positions for ranged advantage.
+     */
+    private void spawnArcherSquad(int startX, int startY, CastleLayout layout, Team team) {
+        int squadSize = 3;
+        
+        // Spawn archers on the front wall (facing the battlefield)
+        float wallZ = 4; // Elevated position on wall
+        
+        // Spread archers along the front wall
+        for (int i = 0; i < squadSize; i++) {
+            float offsetX = (i - 1) * 4; // Spacing of 4 units
+            float px = startX + layout.width / 2 + offsetX;
+            float py = startY + 2; // Near front wall
+            
+            Archer archer = new Archer(px, py, wallZ, team, this);
+            entities.add(archer);
+        }
+    }
+
+    /**
+     * Spawns a squad of Cavalry units outside the castle.
+     * Cavalry are positioned for flanking maneuvers.
+     */
+    private void spawnCavalrySquad(int startX, int startY, CastleLayout layout, Team team) {
+        int squadSize = 2;
+        float spawnZ = 1; // Ground level
+        
+        // Spawn cavalry outside castle gates for flanking maneuvers
+        for (int i = 0; i < squadSize; i++) {
+            float offsetX = (i - 0.5f) * 6; // Wider spacing for horses
+            float px = startX + layout.width / 2 + offsetX;
+            float py = startY - 5; // Outside front of castle
+            
+            Cavalry cavalry = new Cavalry(px, py, spawnZ, team, this);
+            entities.add(cavalry);
+        }
+    }
+
+    /**
+     * Spawns Trebuchets behind the castle for long-range siege support.
+     */
+    private void spawnTrebuchets(int startX, int startY, CastleLayout layout, Team team) {
+        int trebuchetCount = 1; // One trebuchet per side
+        float spawnZ = 1; // Ground level
+        
+        // Position trebuchets behind the castle, offset from center
+        for (int i = 0; i < trebuchetCount; i++) {
+            float px = startX + layout.width / 2;
+            float py = startY + layout.height + 15; // Behind the castle
+            
+            Trebuchet trebuchet = new Trebuchet(px, py, spawnZ, team, this);
+            entities.add(trebuchet);
+        }
+    }
+
+    /**
+     * Spawns Battering Rams in front of the castle for gate assault.
+     */
+    private void spawnBatteringRams(int startX, int startY, CastleLayout layout, Team team) {
+        int ramCount = 1; // One battering ram per side
+        float spawnZ = 1; // Ground level
+        
+        // Position battering ram in front of castle, ready to advance
+        for (int i = 0; i < ramCount; i++) {
+            float px = startX + layout.width / 2;
+            float py = startY - 10; // In front of castle
+            
+            BatteringRam ram = new BatteringRam(px, py, spawnZ, team, this);
+            entities.add(ram);
+        }
     }
 
     /**

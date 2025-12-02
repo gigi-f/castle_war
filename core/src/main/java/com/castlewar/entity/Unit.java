@@ -174,6 +174,22 @@ public abstract class Unit extends Entity {
     protected float attackDamage = 10f;
     protected float attackRange = 1.5f;
     protected float attackCooldown = 1.0f;
+    
+    /**
+     * Returns the attack range of this unit.
+     */
+    public float getAttackRange() {
+        return attackRange;
+    }
+    
+    /**
+     * Checks if this unit can currently attack.
+     * 
+     * @return true if attack cooldown is ready and unit is not stunned/dead
+     */
+    public boolean canAttack() {
+        return attackTimer <= 0 && !isDead() && !isStunned();
+    }
 
     protected float damageFlashTimer = 0f;
     protected float hitStunTimer = 0f;

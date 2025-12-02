@@ -264,6 +264,12 @@ public enum BlackboardKey {
     /** Generic custom float slot 2. Type: {@code Float} */
     CUSTOM_FLOAT_2,
     
+    /** Generic custom integer slot 1. Type: {@code Integer} */
+    CUSTOM_INT_1,
+    
+    /** Generic custom integer slot 2. Type: {@code Integer} */
+    CUSTOM_INT_2,
+    
     /** Generic custom entity slot 1. Type: {@code Entity} */
     CUSTOM_ENTITY_1,
     
